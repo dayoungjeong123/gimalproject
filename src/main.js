@@ -720,14 +720,15 @@ const renderProjectPage = () => {
 // 🐍 미니 에디터 (플로팅) - 스텝 모드 포함
 // ============================================
 
-// 미니 에디터 코드 미리보기 렌더링
-const renderMiniCodePreview = (code, activeLine) => {
+// 미니 에디터 코드 미리보기 렌더링 (실행된 줄까지 표시)
+const renderMiniCodePreview = (code, activeLine, executedLines = []) => {
   const lines = code.split('\n')
   return lines
     .map((line, idx) => {
       const lineNumber = idx + 1
       const isActive = activeLine === lineNumber
-      return `<div class="mini-code-line ${isActive ? 'active' : ''}">
+      const isExecuted = executedLines.includes(lineNumber)
+      return `<div class="mini-code-line ${isActive ? 'active' : ''} ${isExecuted && !isActive ? 'executed' : ''}">
         <span class="mini-code-lno">${lineNumber}</span>
         <span class="mini-code-text">${line || '&nbsp;'}</span>
       </div>`
@@ -735,24 +736,30 @@ const renderMiniCodePreview = (code, activeLine) => {
     .join('')
 }
 
+// 실행된 줄 목록 가져오기
+const getExecutedLines = (trace, currentIndex) => {
+  const executed = []
+  for (let i = 0; i <= currentIndex && i < trace.length; i++) {
+    if (!executed.includes(trace[i].line)) {
+      executed.push(trace[i].line)
+    }
+  }
+  return executed
+}
+
 // 미니 에디터 변수 상태 렌더링
 const renderMiniVars = (trace, currentIndex) => {
   if (currentIndex < 0 || !trace.length) {
-    return '<p class="muted">📦 변수가 여기에 표시됩니다</p>'
+    return '<span class="mini-vars-empty">아직 변수가 없어요</span>'
   }
   
   const current = trace[currentIndex]
   if (!current || !current.locals || Object.keys(current.locals).length === 0) {
-    return '<p class="muted">아직 변수가 없어요</p>'
+    return '<span class="mini-vars-empty">아직 변수가 없어요</span>'
   }
   
   return Object.entries(current.locals)
-    .map(([k, v]) => `
-      <div class="mini-var-item">
-        <span class="mini-var-name">🏷️ ${k}</span>
-        <span class="mini-var-value">${v}</span>
-      </div>
-    `)
+    .map(([k, v]) => `<span class="mini-var-tag"><b>${k}</b> = ${v}</span>`)
     .join('')
 }
 
@@ -768,40 +775,43 @@ const renderMiniEditor = () => {
     `
   }
 
-  // 스텝 모드 UI
+  // 실행된 줄 목록
+  const executedLines = getExecutedLines(miniStepTrace, miniStepIndex)
+  const isFinished = miniStepIndex >= miniStepTrace.length - 1
+  
+  // 스텝 모드 UI (더 간단하게)
   const stepModeUI = miniStepMode ? `
     <div class="mini-step-container">
-      <div class="mini-step-header">
-        <div class="mini-step-info">
-          <span class="step-badge">📍 스텝 ${miniStepIndex + 1} / ${miniStepTrace.length}</span>
-          ${miniStepIndex >= 0 && miniStepTrace[miniStepIndex] ? 
-            `<span class="step-line">Line ${miniStepTrace[miniStepIndex].line}</span>` : ''}
-        </div>
-        <button class="btn mini ghost" id="mini-step-reset">🔄 처음으로</button>
+      <div class="mini-code-preview">
+        ${renderMiniCodePreview(miniEditorCode, miniStepTrace[miniStepIndex]?.line, executedLines)}
       </div>
       
-      <div class="mini-code-preview">
-        ${renderMiniCodePreview(miniEditorCode, miniStepTrace[miniStepIndex]?.line)}
+      <div class="mini-step-bar">
+        <span class="step-progress">${miniStepIndex + 1} / ${miniStepTrace.length}</span>
+        <div class="mini-vars-inline">
+          📦 ${renderMiniVars(miniStepTrace, miniStepIndex)}
+        </div>
       </div>
       
       <div class="mini-step-controls">
-        <button class="btn mini primary" id="mini-step-next" ${miniStepIndex >= miniStepTrace.length - 1 ? 'disabled' : ''}>
-          ⏭️ 다음 단계
+        <button class="btn mini ghost" id="mini-step-reset">⏮️</button>
+        <button class="btn mini primary" id="mini-step-next" ${isFinished ? 'disabled' : ''}>
+          ${isFinished ? '✅ 완료!' : '다음 줄 ▶️'}
         </button>
-        <button class="btn mini ghost" id="mini-step-exit">✕ 스텝 모드 종료</button>
+        <button class="btn mini ghost" id="mini-step-exit">✕</button>
       </div>
       
-      <div class="mini-vars-panel">
-        <div class="mini-vars-header">📦 현재 변수 상태</div>
-        <div class="mini-vars-content">
-          ${renderMiniVars(miniStepTrace, miniStepIndex)}
+      ${miniStepOutput.length > 0 ? `
+        <div class="mini-step-output">
+          <div class="step-output-header">💬 출력 결과</div>
+          <pre class="step-output-text">${miniStepOutput.join('\n')}</pre>
         </div>
-      </div>
+      ` : ''}
       
-      ${miniStepTrace[miniStepIndex]?.source ? `
-        <div class="mini-current-line">
-          <span class="current-line-label">🎯 실행 중인 코드:</span>
-          <code class="current-line-code">${miniStepTrace[miniStepIndex].source}</code>
+      ${miniStepError ? `
+        <div class="mini-step-error">
+          <div class="step-error-header">❌ 오류</div>
+          <pre class="step-error-text">${miniStepError}</pre>
         </div>
       ` : ''}
     </div>
@@ -891,36 +901,28 @@ const updateMiniEditorUI = () => {
   // 스텝 모드일 때만 부분 업데이트
   if (miniStepMode) {
     const codePreview = editor.querySelector('.mini-code-preview')
-    const varsContent = editor.querySelector('.mini-vars-content')
-    const stepInfo = editor.querySelector('.mini-step-info')
-    const currentLine = editor.querySelector('.mini-current-line')
+    const varsInline = editor.querySelector('.mini-vars-inline')
+    const stepProgress = editor.querySelector('.step-progress')
     const nextBtn = editor.querySelector('#mini-step-next')
     
+    const executedLines = getExecutedLines(miniStepTrace, miniStepIndex)
+    const isFinished = miniStepIndex >= miniStepTrace.length - 1
+    
     if (codePreview) {
-      codePreview.innerHTML = renderMiniCodePreview(miniEditorCode, miniStepTrace[miniStepIndex]?.line)
+      codePreview.innerHTML = renderMiniCodePreview(miniEditorCode, miniStepTrace[miniStepIndex]?.line, executedLines)
     }
     
-    if (varsContent) {
-      varsContent.innerHTML = renderMiniVars(miniStepTrace, miniStepIndex)
+    if (varsInline) {
+      varsInline.innerHTML = `📦 ${renderMiniVars(miniStepTrace, miniStepIndex)}`
     }
     
-    if (stepInfo) {
-      stepInfo.innerHTML = `
-        <span class="step-badge">📍 스텝 ${miniStepIndex + 1} / ${miniStepTrace.length}</span>
-        ${miniStepIndex >= 0 && miniStepTrace[miniStepIndex] ? 
-          `<span class="step-line">Line ${miniStepTrace[miniStepIndex].line}</span>` : ''}
-      `
-    }
-    
-    if (currentLine && miniStepTrace[miniStepIndex]?.source) {
-      currentLine.innerHTML = `
-        <span class="current-line-label">🎯 실행 중인 코드:</span>
-        <code class="current-line-code">${miniStepTrace[miniStepIndex].source}</code>
-      `
+    if (stepProgress) {
+      stepProgress.textContent = `${miniStepIndex + 1} / ${miniStepTrace.length}`
     }
     
     if (nextBtn) {
-      nextBtn.disabled = miniStepIndex >= miniStepTrace.length - 1
+      nextBtn.disabled = isFinished
+      nextBtn.innerHTML = isFinished ? '✅ 완료!' : '다음 줄 ▶️'
     }
   }
 }
@@ -1065,9 +1067,21 @@ const attachEvents = () => {
       
       try {
         const result = await runPython(code)
-        if (result.status === 'ok' && result.trace?.length > 0) {
-          miniStepTrace = result.trace
+        if (result.trace?.length > 0) {
+          // 연속으로 같은 줄이 나오면 마지막 것만 유지 (변수 상태가 최신)
+          const filteredTrace = []
+          for (let i = 0; i < result.trace.length; i++) {
+            const current = result.trace[i]
+            const next = result.trace[i + 1]
+            // 다음 줄과 다르거나 마지막이면 추가
+            if (!next || current.line !== next.line) {
+              filteredTrace.push(current)
+            }
+          }
+          
+          miniStepTrace = filteredTrace
           miniStepOutput = result.output || []
+          miniStepError = result.status === 'error' ? result.error : ''
           miniStepIndex = 0
           miniStepMode = true
           renderApp()

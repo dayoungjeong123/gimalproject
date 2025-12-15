@@ -502,8 +502,54 @@ const conceptSteps = [
   { id: 2, title: 'while문', icon: '🔄', short: 'while' },
   { id: 3, title: 'break & continue', icon: '🚦', short: 'break' },
   { id: 4, title: '핵심 정리', icon: '📌', short: '정리' },
-  { id: 5, title: '퀴즈', icon: '✅', short: '퀴즈' }
+  { id: 5, title: '줄 토글 실험', icon: '🔬', short: '실험' },
+  { id: 6, title: '퀴즈', icon: '✅', short: '퀴즈' }
 ]
+
+// 줄 토글 실험 상태
+let experimentLines = {
+  print: true,  // print(i) 체크 상태
+  increment: true  // i += 1 체크 상태
+}
+let experimentRunning = false
+let experimentStep = 0
+let experimentOutput = []
+let experimentHighlight = -1
+
+// 딜레이 함수
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms))
+
+// 실험 UI 업데이트 (페이지 새로고침 없이)
+const updateExperimentUI = (currentI) => {
+  // 변수 값 업데이트
+  const iValue = document.querySelector('#experiment-i-value')
+  if (iValue) {
+    iValue.textContent = currentI
+    iValue.classList.add('pulse')
+    setTimeout(() => iValue.classList.remove('pulse'), 300)
+  }
+  
+  // 출력 영역 업데이트
+  const outputEl = document.querySelector('.experiment-output')
+  if (outputEl) {
+    if (experimentOutput.length > 0) {
+      outputEl.textContent = experimentOutput.join('\n')
+      outputEl.classList.remove('empty')
+    } else {
+      outputEl.textContent = '(출력 없음)'
+      outputEl.classList.add('empty')
+    }
+  }
+  
+  // 코드 라인 하이라이트 업데이트
+  const codeLines = document.querySelectorAll('.experiment-code-box .code-line')
+  codeLines.forEach((line, idx) => {
+    line.classList.remove('highlight')
+    if (idx === experimentHighlight) {
+      line.classList.add('highlight')
+    }
+  })
+}
 
 const renderConceptPage = () => {
   const step = conceptSteps[conceptStep] || conceptSteps[0]
@@ -550,126 +596,376 @@ const renderConceptStepContent = () => {
     case 2: return renderStep2While()
     case 3: return renderStep3Break()
     case 4: return renderStep4Summary()
-    case 5: return renderStep5Quiz()
+    case 5: return renderStep5Experiment()
+    case 6: return renderStep6Quiz()
     default: return renderStep0Intro()
   }
 }
+
+// Step 0: 반복문 소개 상태
+let introClicks = 0
+let introShowMagic = false
 
 // Step 0: 반복문 소개
 const renderStep0Intro = () => `
   <div class="step-card intro-step">
     <div class="step-header">
-      <div class="step-emoji">💡</div>
-      <h2>반복문이 왜 필요할까요?</h2>
+      <div class="step-emoji bounce">🎮</div>
+      <h2>반복문의 마법을 경험해보세요!</h2>
     </div>
-    
-    <div class="intro-scenario">
-      <div class="scenario-icon">🌅</div>
-      <div class="scenario-text">
-        <p>상상해보세요. 여러분이 <strong>"안녕하세요!"</strong>를 100번 출력해야 한다면?</p>
+
+    <!-- 미니 게임: 클릭 챌린지 -->
+    <div class="intro-game">
+      <div class="game-challenge">
+        <div class="challenge-text">
+          <span class="challenge-icon">🎯</span>
+          <p>미션: 아래 버튼을 <strong>10번</strong> 클릭하세요!</p>
+        </div>
+        <div class="click-area">
+          <button class="click-btn ${introClicks >= 10 ? 'done' : ''}" id="intro-click-btn">
+            ${introClicks >= 10 ? '🎉 완료!' : '👆 클릭!'}
+          </button>
+          <div class="click-counter">
+            <span class="counter-num">${introClicks}</span>
+            <span class="counter-label">/ 10</span>
+          </div>
+        </div>
+        ${introClicks >= 10 ? `
+          <div class="click-result tired">
+            <span>😫</span>
+            <p>힘들었죠? 이걸 100번 해야 한다면요?</p>
+          </div>
+        ` : ''}
       </div>
     </div>
-    
-    <div class="code-battle">
-      <div class="battle-side bad">
-        <div class="battle-label">😫 반복문 없이</div>
-        <pre class="battle-code">print("안녕하세요!")
-print("안녕하세요!")
-print("안녕하세요!")
-print("안녕하세요!")
-print("안녕하세요!")
-... (95줄 더 작성해야 해요!)</pre>
-        <div class="battle-result">❌ 100줄 필요</div>
+
+    ${introClicks >= 10 ? `
+      <!-- 마법 소개 -->
+      <div class="magic-reveal ${introShowMagic ? 'show' : ''}">
+        <div class="magic-header">
+          <span class="magic-icon">✨</span>
+          <h3>반복문의 마법!</h3>
+        </div>
+        
+        <div class="magic-demo">
+          <button class="magic-btn" id="show-magic-btn">
+            🪄 마법 보기
+          </button>
+          
+          ${introShowMagic ? `
+            <div class="magic-output" id="magic-output">
+              <div class="output-item appear-1">👆 클릭! (1번째)</div>
+              <div class="output-item appear-2">👆 클릭! (2번째)</div>
+              <div class="output-item appear-3">👆 클릭! (3번째)</div>
+              <div class="output-item appear-4">... (자동으로 계속)</div>
+              <div class="output-item appear-5">👆 클릭! (10번째)</div>
+              <div class="output-item appear-6 done">🎉 완료!</div>
+            </div>
+          ` : ''}
+        </div>
+        
+        <div class="magic-code">
+          <div class="code-label">✨ 단 2줄의 코드:</div>
+          <pre class="magic-code-block"><span class="py-keyword">for</span> i <span class="py-keyword">in</span> <span class="py-function">range</span>(<span class="py-number">10</span>):
+    <span class="py-function">print</span>(<span class="py-string">"👆 클릭!"</span>)</pre>
+        </div>
+      </div>
+    ` : ''}
+
+    <!-- 비교 카드 -->
+    <div class="intro-comparison ${introClicks >= 10 ? 'reveal' : 'hidden'}">
+      <div class="compare-card human">
+        <div class="compare-icon">😓</div>
+        <div class="compare-title">사람이 직접</div>
+        <div class="compare-stat">
+          <span class="stat-num">${introClicks}</span>
+          <span class="stat-unit">번 클릭</span>
+        </div>
+        <div class="compare-time">⏱️ ${Math.max(1, Math.floor(introClicks / 2))}초 걸림</div>
       </div>
       
-      <div class="battle-vs">VS</div>
+      <div class="compare-vs">VS</div>
       
-      <div class="battle-side good">
-        <div class="battle-label">😎 반복문 사용</div>
-        <pre class="battle-code">for i in range(100):
-    print("안녕하세요!")</pre>
-        <div class="battle-result">✅ 단 2줄!</div>
+      <div class="compare-card computer">
+        <div class="compare-icon">💻</div>
+        <div class="compare-title">반복문 사용</div>
+        <div class="compare-stat">
+          <span class="stat-num">2</span>
+          <span class="stat-unit">줄 코드</span>
+        </div>
+        <div class="compare-time">⚡ 0.001초</div>
       </div>
     </div>
-    
-    <div class="benefit-cards">
-      <div class="benefit-card">
-        <span class="benefit-icon">📝</span>
-        <span>코드가 짧아져요</span>
-      </div>
-      <div class="benefit-card">
-        <span class="benefit-icon">🔧</span>
-        <span>수정이 쉬워요</span>
-      </div>
-      <div class="benefit-card">
-        <span class="benefit-icon">🎯</span>
-        <span>실수가 줄어들어요</span>
+
+    <!-- 일상 속 반복 -->
+    <div class="daily-loops">
+      <h4>🌍 일상 속 반복문</h4>
+      <div class="daily-cards">
+        <div class="daily-card">
+          <span class="daily-icon">🍳</span>
+          <span class="daily-text">매일 아침 식사</span>
+          <span class="daily-loop">365번 반복</span>
+        </div>
+        <div class="daily-card">
+          <span class="daily-icon">🎵</span>
+          <span class="daily-text">좋아하는 노래</span>
+          <span class="daily-loop">무한 반복 🔁</span>
+        </div>
+        <div class="daily-card">
+          <span class="daily-icon">🏃</span>
+          <span class="daily-text">운동장 달리기</span>
+          <span class="daily-loop">n바퀴 반복</span>
+        </div>
+        <div class="daily-card">
+          <span class="daily-icon">📱</span>
+          <span class="daily-text">SNS 새로고침</span>
+          <span class="daily-loop">??? 반복 😅</span>
+        </div>
       </div>
     </div>
-    
-    <div class="step-tip">
-      <strong>💡 핵심:</strong> 반복문은 같은 작업을 여러 번 할 때 사용해요!
+
+    <div class="step-tip fun">
+      <span class="tip-icon">💡</span>
+      <div class="tip-content">
+        <strong>핵심 발견!</strong>
+        <p>컴퓨터는 반복을 싫어하지 않아요. 오히려 <em>반복은 컴퓨터의 특기</em>예요!</p>
+      </div>
     </div>
   </div>
 `
 
+// for문 인터랙티브 상태
+let forRangeValue = 5
+let forRunning = false
+let forCurrentI = -1
+let forOutput = []
+
+// while문 인터랙티브 상태
+let whileTargetNum = 3  // 목표 숫자
+let whileCurrentGuess = 0
+let whileRunning = false
+let whileGuesses = []
+let whileFound = false
+
+// while 카운트다운 상태
+let countdownStart = 5
+let countdownCurrent = -1
+let countdownRunning = false
+let countdownOutput = []
+
 // Step 1: for문
-const renderStep1For = () => `
+const renderStep1For = () => {
+  // range 값 생성
+  const rangeNumbers = []
+  for (let i = 0; i < forRangeValue; i++) {
+    rangeNumbers.push(i)
+  }
+
+  return `
   <div class="step-card for-step">
     <div class="step-header">
       <div class="step-emoji">🔁</div>
       <h2>for문 - 횟수가 정해진 반복</h2>
     </div>
-    
-    <div class="syntax-highlight">
-      <div class="syntax-title">📖 기본 구조</div>
-      <pre class="syntax-code-big">for 변수 in range(반복횟수):
-    반복할 코드</pre>
-    </div>
-    
-    <div class="range-visual">
-      <h4>🎯 range() 이해하기</h4>
-      <div class="range-examples">
-        <div class="range-ex">
-          <code>range(5)</code>
-          <div class="range-values">
-            <span class="val">0</span>
-            <span class="val">1</span>
-            <span class="val">2</span>
-            <span class="val">3</span>
-            <span class="val">4</span>
-          </div>
-          <small>0부터 4까지 (5개)</small>
+
+    <!-- 개념 설명 영역 -->
+    <div class="concept-explain">
+      <div class="when-to-use">
+        <span class="use-icon">🤔</span>
+        <p><strong>언제 사용하나요?</strong> 반복 횟수가 <em>정해져 있을 때</em> 사용해요!</p>
+      </div>
+      
+      <div class="real-examples">
+        <div class="real-ex">
+          <span class="ex-icon">🏃</span>
+          <span>"운동장 <strong>5바퀴</strong> 돌기"</span>
         </div>
-        <div class="range-ex">
-          <code>range(1, 6)</code>
-          <div class="range-values">
-            <span class="val">1</span>
-            <span class="val">2</span>
-            <span class="val">3</span>
-            <span class="val">4</span>
-            <span class="val">5</span>
-          </div>
-          <small>1부터 5까지</small>
+        <div class="real-ex">
+          <span class="ex-icon">🎵</span>
+          <span>"노래 <strong>3번</strong> 반복"</span>
+        </div>
+        <div class="real-ex">
+          <span class="ex-icon">📝</span>
+          <span>"문제 <strong>10개</strong> 풀기"</span>
         </div>
       </div>
     </div>
     
-    <div class="example-cards">
-      <div class="example-card" data-code="for i in range(1, 6):\\n    print(i)">
-        <h5>🎮 예제: 1부터 5까지 출력</h5>
-        <pre class="example-code">for i in range(1, 6):
-    print(i)</pre>
-        <div class="example-output">출력: 1 2 3 4 5</div>
-        <button class="btn mini accent try-code-btn">🔍 실행 흐름 보기</button>
+    <!-- 기본 구조 설명 -->
+    <div class="syntax-box">
+      <div class="syntax-header">
+        <span class="syntax-icon">📖</span>
+        <h4>for문 기본 구조</h4>
+      </div>
+      <div class="syntax-content">
+        <pre class="syntax-code"><span class="py-keyword">for</span> <span class="syntax-var">변수</span> <span class="py-keyword">in</span> <span class="py-function">range</span>(<span class="syntax-var">반복횟수</span>):
+    <span class="syntax-comment"># 반복할 코드 (들여쓰기 필수!)</span></pre>
+        <div class="syntax-parts">
+          <div class="part">
+            <span class="part-name">for</span>
+            <span class="part-desc">"~동안 반복해"</span>
+          </div>
+          <div class="part">
+            <span class="part-name">변수</span>
+            <span class="part-desc">현재 몇 번째인지 기억</span>
+          </div>
+          <div class="part">
+            <span class="part-name">range(n)</span>
+            <span class="part-desc">0부터 n-1까지 숫자 생성</span>
+          </div>
+          <div class="part">
+            <span class="part-name">:</span>
+            <span class="part-desc">콜론 필수!</span>
+          </div>
+        </div>
       </div>
     </div>
     
-    <div class="step-tip">
-      <strong>💡 기억하세요:</strong> range(n)은 0부터 시작해서 n-1까지!
+    <!-- 실행 과정 시각화 -->
+    <div class="execution-flow">
+      <h4>🔄 for문이 실행되는 과정</h4>
+      <div class="flow-steps">
+        <div class="flow-step">
+          <div class="flow-num">1</div>
+          <div class="flow-content">
+            <div class="flow-code">for i in range(3):</div>
+            <div class="flow-desc">range(3)이 [0, 1, 2]를 만듦</div>
+          </div>
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-step">
+          <div class="flow-num">2</div>
+          <div class="flow-content">
+            <div class="flow-code">i = 0</div>
+            <div class="flow-desc">첫 번째 값을 i에 저장</div>
+          </div>
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-step">
+          <div class="flow-num">3</div>
+          <div class="flow-content">
+            <div class="flow-code">print(i)</div>
+            <div class="flow-desc">들여쓰기된 코드 실행</div>
+          </div>
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-step repeat">
+          <div class="flow-num">🔄</div>
+          <div class="flow-content">
+            <div class="flow-desc">다음 값으로 반복!</div>
+            <div class="flow-values">i=1, i=2 ...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 인터랙티브 range 조절기 -->
+    <div class="for-playground">
+      <h3 class="playground-title">🎮 range() 놀이터</h3>
+      
+      <div class="range-controller">
+        <div class="range-slider-area">
+          <label>반복 횟수를 조절해보세요!</label>
+          <div class="slider-row">
+            <input type="range" id="range-slider" min="1" max="10" value="${forRangeValue}">
+            <span class="slider-value" id="slider-display">${forRangeValue}</span>
+          </div>
+        </div>
+        
+        <div class="live-code">
+          <div class="code-preview">
+            <pre><span class="py-keyword">for</span> i <span class="py-keyword">in</span> <span class="py-function">range</span>(<span class="py-number range-num">${forRangeValue}</span>):
+    <span class="py-function">print</span>(i)</pre>
+          </div>
+        </div>
+      </div>
+      
+      <!-- 숫자 시각화 -->
+      <div class="number-visualizer">
+        <div class="viz-label">range(${forRangeValue})가 만드는 숫자들:</div>
+        <div class="number-balls" id="number-balls">
+          ${rangeNumbers.map(n => `
+            <div class="number-ball ${forCurrentI === n ? 'active' : ''} ${forOutput.includes(n) ? 'done' : ''}">
+              ${n}
+            </div>
+          `).join('')}
+        </div>
+      </div>
+      
+      <!-- 실행 버튼 및 결과 -->
+      <div class="for-execution">
+        <button class="btn primary for-run-btn" id="run-for-demo" ${forRunning ? 'disabled' : ''}>
+          ${forRunning ? '⏳ 실행 중...' : '▶ 실행해보기'}
+        </button>
+        
+        <div class="for-output-area">
+          <div class="output-label">출력 결과:</div>
+          <div class="output-display" id="for-output-display">
+            ${forOutput.length > 0 
+              ? forOutput.map(n => `<span class="out-num">${n}</span>`).join('') 
+              : '<span class="waiting">실행 버튼을 눌러보세요!</span>'}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- range 팁 카드들 -->
+    <div class="range-tips">
+      <h4>💡 range() 꿀팁</h4>
+      <div class="tip-cards">
+        <div class="tip-card" id="tip-1">
+          <div class="tip-example">range(<span class="highlight">5</span>)</div>
+          <div class="tip-result">→ 0, 1, 2, 3, 4</div>
+          <div class="tip-note">0부터 시작!</div>
+        </div>
+        <div class="tip-card" id="tip-2">
+          <div class="tip-example">range(<span class="highlight">1, 6</span>)</div>
+          <div class="tip-result">→ 1, 2, 3, 4, 5</div>
+          <div class="tip-note">시작점 지정 가능</div>
+        </div>
+        <div class="tip-card" id="tip-3">
+          <div class="tip-example">range(<span class="highlight">0, 10, 2</span>)</div>
+          <div class="tip-result">→ 0, 2, 4, 6, 8</div>
+          <div class="tip-note">2씩 건너뛰기!</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 재미있는 활용 예시 -->
+    <div class="fun-examples">
+      <h4>🎉 for문으로 할 수 있는 것들</h4>
+      <div class="fun-cards">
+        <button class="fun-card" data-example="stars">
+          <span class="fun-icon">⭐</span>
+          <span class="fun-text">별 5개 출력</span>
+        </button>
+        <button class="fun-card" data-example="countdown">
+          <span class="fun-icon">🚀</span>
+          <span class="fun-text">카운트다운</span>
+        </button>
+        <button class="fun-card" data-example="gugudan">
+          <span class="fun-icon">✖️</span>
+          <span class="fun-text">구구단</span>
+        </button>
+        <button class="fun-card" data-example="emoji">
+          <span class="fun-icon">😀</span>
+          <span class="fun-text">이모지 행진</span>
+        </button>
+      </div>
+      
+      <div class="fun-demo" id="fun-demo-area"></div>
+    </div>
+
+    <div class="step-tip fun">
+      <span class="tip-icon">🎯</span>
+      <div class="tip-content">
+        <strong>핵심 포인트!</strong>
+        <p>for문은 <em>"몇 번 반복할지 정확히 알 때"</em> 사용해요. range()로 반복 횟수를 정해요!</p>
+      </div>
     </div>
   </div>
 `
+}
 
 // Step 2: while문
 const renderStep2While = () => `
@@ -678,95 +974,365 @@ const renderStep2While = () => `
       <div class="step-emoji">🔄</div>
       <h2>while문 - 조건이 참인 동안 반복</h2>
     </div>
-    
+
+    <!-- 개념 설명 -->
+    <div class="concept-explain while-explain">
+      <div class="when-to-use">
+        <span class="use-icon">🤔</span>
+        <p><strong>언제 사용하나요?</strong> 반복 횟수를 <em>모를 때</em>, 특정 조건까지 반복해야 할 때!</p>
+      </div>
+      
+      <div class="real-examples">
+        <div class="real-ex">
+          <span class="ex-icon">🎯</span>
+          <span>"정답 <strong>맞출 때까지</strong>"</span>
+        </div>
+        <div class="real-ex">
+          <span class="ex-icon">🎮</span>
+          <span>"게임 <strong>질 때까지</strong>"</span>
+        </div>
+        <div class="real-ex">
+          <span class="ex-icon">🔋</span>
+          <span>"배터리 <strong>다 닳을 때까지</strong>"</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- for vs while 비교 -->
     <div class="vs-comparison">
       <div class="vs-item for-side">
         <h4>🔁 for문</h4>
         <p><strong>"5번"</strong> 반복해줘</p>
+        <div class="vs-code">for i in range(5):</div>
         <small>횟수가 정해져 있을 때</small>
       </div>
       <div class="vs-badge">VS</div>
       <div class="vs-item while-side">
         <h4>🔄 while문</h4>
         <p><strong>"맞출 때까지"</strong> 반복해줘</p>
+        <div class="vs-code">while 조건 == True:</div>
         <small>조건이 중요할 때</small>
       </div>
     </div>
-    
-    <div class="syntax-highlight">
-      <div class="syntax-title">📖 기본 구조</div>
-      <pre class="syntax-code-big">while 조건:
-    반복할 코드
-    조건을 변경하는 코드  # 중요!</pre>
-    </div>
-    
-    <div class="example-cards">
-      <div class="example-card">
-        <h5>🚀 예제: 카운트다운</h5>
-        <pre class="example-code">count = 5
-while count > 0:
-    print(count)
-    count = count - 1
-print("발사! 🚀")</pre>
-        <div class="example-output">출력: 5 4 3 2 1 발사! 🚀</div>
+
+    <!-- 기본 구조 설명 -->
+    <div class="syntax-box while-syntax">
+      <div class="syntax-header">
+        <span class="syntax-icon">📖</span>
+        <h4>while문 기본 구조</h4>
+      </div>
+      <div class="syntax-content">
+        <pre class="syntax-code"><span class="py-keyword">while</span> <span class="syntax-var">조건</span>:
+    <span class="syntax-comment"># 반복할 코드</span>
+    <span class="syntax-comment"># 조건을 변경하는 코드 ← 중요!</span></pre>
+        <div class="syntax-parts">
+          <div class="part">
+            <span class="part-name">while</span>
+            <span class="part-desc">"~하는 동안"</span>
+          </div>
+          <div class="part">
+            <span class="part-name">조건</span>
+            <span class="part-desc">True면 반복 계속</span>
+          </div>
+          <div class="part warning-part">
+            <span class="part-name">⚠️ 조건 변경</span>
+            <span class="part-desc">없으면 무한루프!</span>
+          </div>
+        </div>
       </div>
     </div>
-    
-    <div class="warning-box-inline">
-      <span class="warning-icon">⚠️</span>
-      <div>
-        <strong>무한 루프 주의!</strong>
-        <p>조건이 False가 되지 않으면 영원히 반복해요!</p>
+
+    <!-- 실행 과정 시각화 -->
+    <div class="execution-flow while-flow">
+      <h4>🔄 while문이 실행되는 과정</h4>
+      <div class="flow-steps while-flow-steps">
+        <div class="flow-step">
+          <div class="flow-num">1</div>
+          <div class="flow-content">
+            <div class="flow-code">조건 확인</div>
+            <div class="flow-desc">True인지 False인지?</div>
+          </div>
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-step">
+          <div class="flow-num">2</div>
+          <div class="flow-content">
+            <div class="flow-code">True면 실행</div>
+            <div class="flow-desc">들여쓰기된 코드 실행</div>
+          </div>
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-step repeat">
+          <div class="flow-num">🔄</div>
+          <div class="flow-content">
+            <div class="flow-desc">다시 조건 확인!</div>
+            <div class="flow-values">무한 반복...</div>
+          </div>
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-step stop-step">
+          <div class="flow-num">🛑</div>
+          <div class="flow-content">
+            <div class="flow-code">False면 탈출</div>
+            <div class="flow-desc">반복 종료!</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 🎮 인터랙티브: 카운트다운 실험 -->
+    <div class="while-playground">
+      <h3 class="playground-title">🚀 카운트다운 실험실</h3>
+      
+      <div class="countdown-controller">
+        <div class="countdown-slider-area">
+          <label>시작 숫자를 정해보세요!</label>
+          <div class="slider-row">
+            <input type="range" id="countdown-slider" min="3" max="10" value="${countdownStart}">
+            <span class="slider-value" id="countdown-display">${countdownStart}</span>
+          </div>
+        </div>
+        
+        <div class="live-code while-live-code">
+          <div class="code-preview">
+            <pre><span class="py-keyword">count</span> = <span class="py-number countdown-num">${countdownStart}</span>
+<span class="py-keyword">while</span> count > 0:
+    <span class="py-function">print</span>(count)
+    count = count - 1
+<span class="py-function">print</span>(<span class="py-string">"발사! 🚀"</span>)</pre>
+          </div>
+        </div>
+      </div>
+      
+      <!-- 카운트다운 시각화 -->
+      <div class="countdown-visualizer">
+        <div class="viz-label">count 값의 변화:</div>
+        <div class="countdown-balls" id="countdown-balls">
+          ${Array.from({length: countdownStart}, (_, i) => countdownStart - i).map(n => `
+            <div class="countdown-ball ${countdownCurrent === n ? 'active' : ''} ${countdownOutput.includes(n) ? 'done' : ''}">
+              ${n}
+            </div>
+          `).join('')}
+          <div class="countdown-ball rocket ${countdownOutput.includes('🚀') ? 'done' : ''}">🚀</div>
+        </div>
+      </div>
+      
+      <!-- 조건 상태 표시 -->
+      <div class="condition-display">
+        <div class="condition-box" id="condition-box">
+          <span class="condition-label">조건: count > 0</span>
+          <span class="condition-result" id="condition-result">
+            ${countdownCurrent > 0 ? '✅ True (계속!)' : countdownCurrent === 0 ? '❌ False (종료!)' : '🤔 실행 전'}
+          </span>
+        </div>
+      </div>
+      
+      <!-- 실행 버튼 및 결과 -->
+      <div class="while-execution">
+        <button class="btn primary while-run-btn" id="run-countdown-demo" ${countdownRunning ? 'disabled' : ''}>
+          ${countdownRunning ? '⏳ 실행 중...' : '▶ 카운트다운 시작!'}
+        </button>
+        
+        <div class="while-output-area">
+          <div class="output-label">출력 결과:</div>
+          <div class="output-display" id="countdown-output-display">
+            ${countdownOutput.length > 0 
+              ? countdownOutput.map(n => `<span class="out-num ${n === '🚀' ? 'rocket-out' : ''}">${n}</span>`).join('') 
+              : '<span class="waiting">실행 버튼을 눌러보세요!</span>'}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 🎯 무한루프 체험 -->
+    <div class="infinite-loop-demo">
+      <h4>⚠️ 무한 루프란?</h4>
+      <div class="infinite-demo-container">
+        <div class="infinite-code">
+          <pre><span class="bad-code"><span class="py-keyword">count</span> = 5
+<span class="py-keyword">while</span> count > 0:
+    <span class="py-function">print</span>(count)
+    <span class="py-comment"># count = count - 1 ← 빠짐!</span></span></pre>
+          <div class="infinite-warning">
+            <span class="warning-icon">💀</span>
+            <span>count가 영원히 5! 무한 반복...</span>
+          </div>
+        </div>
+        <div class="infinite-fix">
+          <pre><span class="good-code"><span class="py-keyword">count</span> = 5
+<span class="py-keyword">while</span> count > 0:
+    <span class="py-function">print</span>(count)
+    count = count - 1  <span class="py-comment"># ✅ 조건 변경!</span></span></pre>
+          <div class="infinite-success">
+            <span class="success-icon">✅</span>
+            <span>count가 줄어서 0이 되면 종료!</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 활용 예시 -->
+    <div class="while-examples">
+      <h4>🎉 while문 활용 예시</h4>
+      <div class="while-example-cards">
+        <button class="while-ex-card" data-while-example="password">
+          <span class="while-icon">🔐</span>
+          <span class="while-text">비밀번호 맞추기</span>
+        </button>
+        <button class="while-ex-card" data-while-example="sum">
+          <span class="while-icon">➕</span>
+          <span class="while-text">합계 계산</span>
+        </button>
+        <button class="while-ex-card" data-while-example="guess">
+          <span class="while-icon">🎲</span>
+          <span class="while-text">숫자 맞추기</span>
+        </button>
+      </div>
+      <div class="while-demo-area" id="while-demo-area"></div>
+    </div>
+
+    <div class="step-tip fun while-tip">
+      <span class="tip-icon">🎯</span>
+      <div class="tip-content">
+        <strong>핵심 포인트!</strong>
+        <p>while문은 <em>"언제 끝날지 모르지만, 특정 조건까지 반복"</em>할 때 사용해요. 꼭 조건을 변경하는 코드를 넣으세요!</p>
       </div>
     </div>
   </div>
 `
 
+// break/continue 실험 상태
+let bcSelectedBlock = null // 'break' | 'continue' | null
+let bcRunning = false
+let bcOutput = []
+let bcHighlight = -1
+let bcFeedback = ''
+
+// break/continue 실험 UI 업데이트
+const updateBcExperimentUI = (currentI) => {
+  // 변수 값 업데이트
+  const iValue = document.querySelector('#bc-i-value')
+  if (iValue) {
+    iValue.textContent = currentI
+    iValue.classList.add('pulse')
+    setTimeout(() => iValue.classList.remove('pulse'), 300)
+  }
+  
+  // 출력 영역 업데이트
+  const outputEl = document.querySelector('.bc-output')
+  if (outputEl) {
+    if (bcOutput.length > 0) {
+      outputEl.textContent = bcOutput.join('\n')
+      outputEl.classList.remove('empty')
+    } else {
+      outputEl.textContent = '(실행 대기)'
+      outputEl.classList.add('empty')
+    }
+  }
+  
+  // 코드 라인 하이라이트 업데이트
+  const codeLines = document.querySelectorAll('.bc-code-box .bc-code-line')
+  codeLines.forEach((line, idx) => {
+    line.classList.remove('highlight')
+    if (idx === bcHighlight) {
+      line.classList.add('highlight')
+    }
+  })
+}
+
 // Step 3: break/continue
-const renderStep3Break = () => `
+const renderStep3Break = () => {
+  return `
   <div class="step-card break-step">
     <div class="step-header">
       <div class="step-emoji">🚦</div>
       <h2>break & continue</h2>
     </div>
-    
-    <div class="bc-cards">
-      <div class="bc-card-big break-card">
-        <div class="bc-header">
-          <span class="bc-icon-big">🛑</span>
-          <h3>break</h3>
+
+    <div class="bc-concept-cards">
+      <div class="bc-concept break-concept">
+        <span class="bc-icon">🛑</span>
+        <span class="bc-name">break</span>
+        <span class="bc-desc">반복문을 즉시 종료</span>
+      </div>
+      <div class="bc-concept continue-concept">
+        <span class="bc-icon">⏭️</span>
+        <span class="bc-name">continue</span>
+        <span class="bc-desc">이번 반복만 건너뜀</span>
+      </div>
+    </div>
+
+    <!-- 드래그 앤 드롭 실험 -->
+    <div class="bc-experiment">
+      <h3 class="bc-exp-title">🔬 직접 실험해보기</h3>
+      
+      <div class="bc-exp-container">
+        <!-- 왼쪽: 블록 선택 영역 -->
+        <div class="bc-blocks-area">
+          <p class="bc-blocks-label">블록을 선택하세요:</p>
+          <div class="bc-draggable-blocks">
+            <button class="bc-block break-block ${bcSelectedBlock === 'break' ? 'selected' : ''}" data-block="break">
+              🛑 break
+            </button>
+            <button class="bc-block continue-block ${bcSelectedBlock === 'continue' ? 'selected' : ''}" data-block="continue">
+              ⏭️ continue
+            </button>
+          </div>
         </div>
-        <p class="bc-meaning">반복문을 <strong>완전히 탈출</strong>해요</p>
-        <pre class="bc-code-big">for i in range(10):
-    if i == 5:
-        break  # 여기서 멈춤!
-    print(i)</pre>
-        <div class="bc-result">
-          <span class="result-label">출력:</span>
-          <span class="result-values">0 1 2 3 4</span>
+        
+        <!-- 가운데: 코드 영역 -->
+        <div class="bc-code-area">
+          <div class="bc-code-box">
+            <div class="bc-code-line ${bcHighlight === 0 ? 'highlight' : ''}">
+              <span class="line-num">1</span>
+              <span class="line-code"><span class="py-keyword">for</span> i <span class="py-keyword">in</span> <span class="py-function">range</span>(<span class="py-number">6</span>):</span>
+            </div>
+            <div class="bc-code-line ${bcHighlight === 1 ? 'highlight' : ''}">
+              <span class="line-num">2</span>
+              <span class="line-code"><span class="indent">    </span><span class="py-keyword">if</span> i == <span class="py-number">3</span>:</span>
+            </div>
+            <div class="bc-code-line drop-zone ${bcHighlight === 2 ? 'highlight' : ''} ${bcSelectedBlock ? 'filled ' + bcSelectedBlock : 'empty'}">
+              <span class="line-num">3</span>
+              <span class="line-code">
+                <span class="indent">        </span>
+                ${bcSelectedBlock 
+                  ? `<span class="inserted-block ${bcSelectedBlock}">${bcSelectedBlock === 'break' ? '🛑 break' : '⏭️ continue'}</span>` 
+                  : '<span class="drop-placeholder">[ 여기에 놓기 ]</span>'}
+              </span>
+            </div>
+            <div class="bc-code-line ${bcHighlight === 3 ? 'highlight' : ''}">
+              <span class="line-num">4</span>
+              <span class="line-code"><span class="indent">    </span><span class="py-function">print</span>(i)</span>
+            </div>
+          </div>
+          
+          <button class="btn primary bc-run-btn" id="run-bc-experiment" ${!bcSelectedBlock || bcRunning ? 'disabled' : ''}>
+            ${bcRunning ? '⏳ 실행 중...' : '▶ 실행하기'}
+          </button>
         </div>
-        <div class="bc-analogy">🚪 "이제 그만! 나갈래!"</div>
+        
+        <!-- 오른쪽: 결과 영역 -->
+        <div class="bc-result-area">
+          <div class="bc-result-header">💬 출력 결과</div>
+          <pre class="bc-output ${bcOutput.length === 0 ? 'empty' : ''}">${bcOutput.length > 0 ? bcOutput.join('\n') : '(실행 대기)'}</pre>
+          
+          <div class="bc-var-display">
+            <span class="var-label">현재 i 값:</span>
+            <span class="var-value" id="bc-i-value">-</span>
+          </div>
+        </div>
       </div>
       
-      <div class="bc-card-big continue-card">
-        <div class="bc-header">
-          <span class="bc-icon-big">⏭️</span>
-          <h3>continue</h3>
+      ${bcFeedback ? `
+        <div class="bc-feedback ${bcSelectedBlock}">
+          <div class="feedback-icon">${bcSelectedBlock === 'break' ? '🛑' : '⏭️'}</div>
+          <p>${bcFeedback}</p>
         </div>
-        <p class="bc-meaning">현재 반복만 <strong>건너뛰기</strong>해요</p>
-        <pre class="bc-code-big">for i in range(5):
-    if i == 2:
-        continue  # 2만 건너뜀
-    print(i)</pre>
-        <div class="bc-result">
-          <span class="result-label">출력:</span>
-          <span class="result-values">0 1 3 4</span>
-        </div>
-        <div class="bc-analogy">⏭️ "이번만 패스!"</div>
-      </div>
+      ` : ''}
     </div>
   </div>
 `
+}
 
 // Step 4: 정리
 const renderStep4Summary = () => `
@@ -836,8 +1402,94 @@ const renderStep4Summary = () => `
   </div>
 `
 
-// Step 5: 퀴즈
-const renderStep5Quiz = () => `
+// Step 5: 줄 토글 실험
+const renderStep5Experiment = () => {
+  // 현재까지의 출력 결과
+  const outputDisplay = experimentOutput.length > 0
+    ? experimentOutput.join('\n')
+    : '(출력 없음)'
+
+  return `
+    <div class="step-card experiment-step">
+      <div class="step-header">
+        <div class="step-emoji">🔬</div>
+        <h2>줄 토글 실험</h2>
+      </div>
+
+      <div class="experiment-intro">
+        <p>프로그램은 여러 줄의 코드가 함께 작동합니다.<br>
+        <strong>줄 하나를 꺼보면, 실행 결과가 달라집니다.</strong></p>
+      </div>
+
+      <div class="experiment-container">
+        <!-- 코드 영역 -->
+        <div class="experiment-code-section">
+          <div class="experiment-code-header">📄 코드</div>
+          <div class="experiment-code-box">
+            <div class="code-line fixed ${experimentHighlight === 0 ? 'highlight' : ''}">
+              <span class="line-num">1</span>
+              <span class="line-content">i = <span class="py-number">0</span></span>
+            </div>
+            <div class="code-line fixed ${experimentHighlight === 1 ? 'highlight' : ''}">
+              <span class="line-num">2</span>
+              <span class="line-content"><span class="py-keyword">while</span> i < <span class="py-number">3</span>:</span>
+            </div>
+            <div class="code-line toggleable indented ${experimentHighlight === 2 ? 'highlight' : ''} ${!experimentLines.print ? 'disabled-line' : ''}">
+              <span class="line-num">3</span>
+              <label class="toggle-checkbox">
+                <input type="checkbox" id="toggle-print" ${experimentLines.print ? 'checked' : ''}>
+                <span class="checkmark"></span>
+              </label>
+              <span class="line-content"><span class="indent">    </span><span class="py-function">print</span>(i)</span>
+            </div>
+            <div class="code-line toggleable indented ${experimentHighlight === 3 ? 'highlight' : ''} ${!experimentLines.increment ? 'disabled-line' : ''}">
+              <span class="line-num">4</span>
+              <label class="toggle-checkbox">
+                <input type="checkbox" id="toggle-increment" ${experimentLines.increment ? 'checked' : ''}>
+                <span class="checkmark"></span>
+              </label>
+              <span class="line-content"><span class="indent">    </span>i += <span class="py-number">1</span></span>
+            </div>
+          </div>
+
+          <button class="btn primary experiment-run-btn" id="run-experiment" ${experimentRunning ? 'disabled' : ''}>
+            ${experimentRunning ? '⏳ 실행 중...' : '▶ 실행'}
+          </button>
+        </div>
+
+        <!-- 실행 결과 영역 -->
+        <div class="experiment-result-section">
+          <div class="experiment-result-header">💬 출력 결과</div>
+          <pre class="experiment-output ${experimentOutput.length === 0 ? 'empty' : ''}">${outputDisplay}</pre>
+
+          <div class="experiment-var-display">
+            <span class="var-label">변수 i 값:</span>
+            <span class="var-value" id="experiment-i-value">0</span>
+          </div>
+        </div>
+      </div>
+
+      ${experimentOutput.length > 0 || experimentRunning === false && experimentStep > 0 ? `
+        <div class="experiment-reflection">
+          <div class="reflection-icon">🤔</div>
+          <p><strong>어떤 코드 줄이 실행 결과에 가장 큰 영향을 주었나요?</strong></p>
+          <p class="reflection-hint">이 질문에 정답은 없어요. 여러분의 관찰과 생각이 중요합니다!</p>
+        </div>
+      ` : ''}
+
+      <div class="experiment-tips">
+        <div class="tip-icon">💡</div>
+        <div class="tip-text">
+          <strong>실험 아이디어:</strong> 체크박스를 끄고 켜면서 결과가 어떻게 달라지는지 관찰해보세요!<br>
+          <span class="tip-warning">⚠️ i += 1을 끄면 무한 반복이 될 수 있어요! (자동으로 5회에서 멈춥니다)</span>
+        </div>
+      </div>
+    </div>
+  `
+}
+
+// Step 6: 퀴즈
+const renderStep6Quiz = () => `
   <div class="step-card quiz-step">
     <div class="step-header">
       <div class="step-emoji">✅</div>
@@ -2006,6 +2658,91 @@ let projectShowTrace = false // 실행 흐름 보기 모드
 let projectTrace = []
 let projectTraceIndex = 0
 
+// 프로젝트 실행 흐름 UI만 업데이트 (새로고침 없이)
+const updateProjectTraceUI = () => {
+  const traceSection = document.querySelector('.project-trace-section')
+  if (!traceSection || projectTrace.length === 0) return
+  
+  const currentStep = projectTrace[projectTraceIndex]
+  const codeLines = projectCode.split('\n')
+  
+  // 코드 라인 업데이트
+  const codeContainer = traceSection.querySelector('.trace-code-lines')
+  if (codeContainer) {
+    codeContainer.innerHTML = codeLines.map((line, idx) => {
+      const lineNum = idx + 1
+      const isActive = currentStep && currentStep.lineNum === lineNum
+      const isExecuted = projectTrace.slice(0, projectTraceIndex + 1).some(t => t.lineNum === lineNum)
+      let className = 'trace-code-line'
+      if (isActive) className += ' active'
+      else if (isExecuted) className += ' executed'
+      return '<div class="' + className + '"><span class="line-num">' + lineNum + '</span><span class="line-code">' + highlightPython(line || ' ') + '</span></div>'
+    }).join('')
+  }
+  
+  // 트레이스 테이블 업데이트
+  const tableBody = traceSection.querySelector('.trace-table tbody')
+  if (tableBody) {
+    tableBody.innerHTML = projectTrace.slice(0, projectTraceIndex + 1).map((step, idx) => {
+      const isActive = idx === projectTraceIndex
+      const varsHTML = Object.entries(step.variables || {}).map(([k, v]) => '<span class="var-chip">' + k + '=' + v + '</span>').join(' ')
+      const outputHTML = step.output ? '<span class="output-text">' + step.output + '</span>' : '<span class="no-output">-</span>'
+      return '<tr class="' + (isActive ? 'active' : '') + '"><td>' + (idx + 1) + '</td><td>' + step.lineNum + '</td><td>' + varsHTML + '</td><td>' + outputHTML + '</td></tr>'
+    }).join('')
+    
+    // 테이블 스크롤
+    const tableWrap = traceSection.querySelector('.trace-table-wrap')
+    if (tableWrap) {
+      tableWrap.scrollTop = tableWrap.scrollHeight
+    }
+  }
+  
+  // 출력 업데이트
+  const outputPre = traceSection.querySelector('.trace-output')
+  if (outputPre) {
+    let fullOutput = ''
+    let currentLine = ''
+    for (let i = 0; i <= projectTraceIndex; i++) {
+      const step = projectTrace[i]
+      if (step.output) {
+        currentLine += step.output
+        const endChar = step.endChar !== undefined ? step.endChar : '\n'
+        if (endChar === '\n') {
+          fullOutput += currentLine + '\n'
+          currentLine = ''
+        }
+      }
+    }
+    fullOutput += currentLine
+    outputPre.textContent = fullOutput || '(아직 출력 없음)'
+  }
+  
+  // 프로그레스 바 업데이트
+  const progressFill = traceSection.querySelector('.progress-fill')
+  const progressText = traceSection.querySelector('.progress-text')
+  if (progressFill) {
+    const progress = Math.round(((projectTraceIndex + 1) / projectTrace.length) * 100)
+    progressFill.style.width = progress + '%'
+  }
+  if (progressText) {
+    progressText.textContent = `${projectTraceIndex + 1} / ${projectTrace.length} 단계`
+  }
+  
+  // 버튼 상태 업데이트
+  const firstBtn = traceSection.querySelector('#trace-first')
+  const prevBtn = traceSection.querySelector('#trace-prev')
+  const nextBtn = traceSection.querySelector('#trace-next')
+  const lastBtn = traceSection.querySelector('#trace-last')
+  
+  const isFirst = projectTraceIndex === 0
+  const isLast = projectTraceIndex >= projectTrace.length - 1
+  
+  if (firstBtn) firstBtn.disabled = isFirst
+  if (prevBtn) prevBtn.disabled = isFirst
+  if (nextBtn) nextBtn.disabled = isLast
+  if (lastBtn) lastBtn.disabled = isLast
+}
+
 // 프로젝트 실행 흐름 섹션 렌더링
 const renderProjectTraceSection = () => {
   if (projectTrace.length === 0) return ''
@@ -2016,8 +2753,8 @@ const renderProjectTraceSection = () => {
   // 코드 라인 렌더링
   const codeHTML = codeLines.map((line, idx) => {
     const lineNum = idx + 1
-    const isActive = currentStep && currentStep.line === lineNum
-    const isExecuted = projectTrace.slice(0, projectTraceIndex + 1).some(t => t.line === lineNum)
+    const isActive = currentStep && currentStep.lineNum === lineNum
+    const isExecuted = projectTrace.slice(0, projectTraceIndex + 1).some(t => t.lineNum === lineNum)
     let className = 'trace-code-line'
     if (isActive) className += ' active'
     else if (isExecuted) className += ' executed'
@@ -2027,9 +2764,9 @@ const renderProjectTraceSection = () => {
   // 트레이스 테이블 렌더링
   const traceRows = projectTrace.slice(0, projectTraceIndex + 1).map((step, idx) => {
     const isActive = idx === projectTraceIndex
-    const varsHTML = Object.entries(step.vars || {}).map(([k, v]) => '<span class="var-chip">' + k + '=' + v + '</span>').join(' ')
+    const varsHTML = Object.entries(step.variables || {}).map(([k, v]) => '<span class="var-chip">' + k + '=' + v + '</span>').join(' ')
     const outputHTML = step.output ? '<span class="output-text">' + step.output + '</span>' : '<span class="no-output">-</span>'
-    return '<tr class="' + (isActive ? 'active' : '') + '"><td>' + (idx + 1) + '</td><td>' + step.line + '</td><td>' + varsHTML + '</td><td>' + outputHTML + '</td></tr>'
+    return '<tr class="' + (isActive ? 'active' : '') + '"><td>' + (idx + 1) + '</td><td>' + step.lineNum + '</td><td>' + varsHTML + '</td><td>' + outputHTML + '</td></tr>'
   }).join('')
   
   // 현재까지의 전체 출력
@@ -2351,8 +3088,8 @@ const renderMiniCodePreview = (code, activeLine, executedLines = []) => {
 const getExecutedLines = (trace, currentIndex) => {
   const executed = []
   for (let i = 0; i <= currentIndex && i < trace.length; i++) {
-    if (!executed.includes(trace[i].line)) {
-      executed.push(trace[i].line)
+    if (!executed.includes(trace[i].lineNum)) {
+      executed.push(trace[i].lineNum)
     }
   }
   return executed
@@ -2362,13 +3099,13 @@ const renderMiniVars = (trace, currentIndex) => {
   if (currentIndex < 0 || !trace.length) {
     return '<span class="mini-vars-empty">아직 변수가 없어요</span>'
   }
-  
+
   const current = trace[currentIndex]
-  if (!current || !current.locals || Object.keys(current.locals).length === 0) {
+  if (!current || !current.variables || Object.keys(current.variables).length === 0) {
     return '<span class="mini-vars-empty">아직 변수가 없어요</span>'
   }
-  
-  return Object.entries(current.locals)
+
+  return Object.entries(current.variables)
     .map(([k, v]) => `<span class="mini-var-tag"><b>${k}</b> = ${v}</span>`)
     .join('')
 }
@@ -2621,8 +3358,8 @@ const renderMiniEditor = () => {
     `
   }
 
-  // 현재 trace 정보
-  const currentTrace = miniStepMode ? fakeInterpreter(miniEditorCode).trace : []
+  // 현재 trace 정보 (miniStepTrace 사용)
+  const currentTrace = miniStepTrace
   const currentStep = currentTrace[miniStepIndex] || null
   const isFinished = miniStepIndex >= currentTrace.length - 1
   
@@ -2677,30 +3414,38 @@ const renderMiniEditor = () => {
   // 스텝 모드 UI (실행 흐름 표시)
   const stepModeUI = miniStepMode ? `
     <div class="helper-trace-container">
-      <div class="helper-code-section">
-        <div class="helper-section-title">💻 코드</div>
-        <div class="helper-code-lines">
-          ${renderHelperCodeLines()}
+      <div class="helper-main-area">
+        <div class="helper-code-section">
+          <div class="helper-section-title">💻 코드</div>
+          <div class="helper-code-lines">
+            ${renderHelperCodeLines()}
+          </div>
+        </div>
+        
+        <div class="helper-trace-section">
+          <div class="helper-section-title">📊 실행 단계</div>
+          <div class="helper-trace-table-wrap">
+            <table class="helper-trace-table">
+              <thead>
+                <tr>
+                  <th>단계</th>
+                  <th>줄</th>
+                  <th>변수</th>
+                  <th>출력</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${renderHelperTraceRows()}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
       
-      <div class="helper-trace-section">
-        <div class="helper-section-title">📊 실행 단계</div>
-        <div class="helper-trace-table-wrap">
-          <table class="helper-trace-table">
-            <thead>
-              <tr>
-                <th>단계</th>
-                <th>줄</th>
-                <th>변수</th>
-                <th>출력</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${renderHelperTraceRows()}
-            </tbody>
-          </table>
-        </div>
+      <!-- 출력 결과 영역 (항상 표시) -->
+      <div class="helper-output-section">
+        <div class="helper-section-title">💬 출력 결과</div>
+        <pre class="helper-output-text">${outputLines.length > 0 ? outputLines.join('\n') : '(아직 출력 없음)'}</pre>
       </div>
       
       <div class="helper-status">
@@ -2719,8 +3464,6 @@ const renderMiniEditor = () => {
         </button>
         <button class="btn mini ghost" id="mini-step-exit">✕ 종료</button>
       </div>
-      
-      ${outputLines.length > 0 ? '<div class="helper-output"><div class="helper-section-title">💬 출력</div><pre class="helper-output-text">' + outputLines.join('\n') + '</pre></div>' : ''}
     </div>
   ` : ''
 
@@ -2826,31 +3569,116 @@ const attachIntroEvents = () => {
 const updateMiniEditorUI = () => {
   const editor = document.querySelector('#mini-editor')
   if (!editor) return
-  
-  if (miniStepMode) {
-    const codePreview = editor.querySelector('.mini-code-preview')
-    const varsInline = editor.querySelector('.mini-vars-inline')
-    const stepProgress = editor.querySelector('.step-progress')
-    const nextBtn = editor.querySelector('#mini-step-next')
-    
-    const executedLines = getExecutedLines(miniStepTrace, miniStepIndex)
+
+  if (miniStepMode && miniStepTrace.length > 0) {
+    const currentStep = miniStepTrace[miniStepIndex]
     const isFinished = miniStepIndex >= miniStepTrace.length - 1
+    const isFirst = miniStepIndex === 0
     
-    if (codePreview) {
-      codePreview.innerHTML = renderMiniCodePreview(miniEditorCode, miniStepTrace[miniStepIndex]?.line, executedLines)
+    // 코드 라인 업데이트
+    const codeLines = editor.querySelector('.helper-code-lines')
+    if (codeLines) {
+      codeLines.innerHTML = miniEditorCode.split('\n').map((line, idx) => {
+        const lineNum = idx + 1
+        const isActive = currentStep?.lineNum === lineNum
+        const isExecuted = miniStepTrace.slice(0, miniStepIndex + 1).some(t => t.lineNum === lineNum)
+        const classes = ['helper-code-row']
+        if (isActive) classes.push('active')
+        if (isExecuted && !isActive) classes.push('executed')
+        return '<div class="' + classes.join(' ') + '">' +
+          '<span class="helper-line-num">' + lineNum + '</span>' +
+          '<span class="helper-line-code">' + (highlightPython(line) || ' ') + '</span>' +
+          '</div>'
+      }).join('')
     }
     
-    if (varsInline) {
-      varsInline.innerHTML = `📦 ${renderMiniVars(miniStepTrace, miniStepIndex)}`
+    // 트레이스 테이블 업데이트
+    const traceBody = editor.querySelector('.helper-trace-table tbody')
+    if (traceBody) {
+      traceBody.innerHTML = miniStepTrace.slice(0, miniStepIndex + 1).map((t, i) => {
+        const rowClass = (i === miniStepIndex ? 'current' : 'executed') + ' ' + t.type
+        const vars = Object.entries(t.variables).map(([k,v]) => '<span class="var-chip">' + k + '=' + v + '</span>').join(' ') || '-'
+        const output = t.output !== null ? '"' + t.output + '"' : '-'
+        return '<tr class="' + rowClass + '">' +
+          '<td class="step-num">' + t.step + '</td>' +
+          '<td class="line-num">' + t.lineNum + '</td>' +
+          '<td class="vars-cell">' + vars + '</td>' +
+          '<td class="output-cell">' + output + '</td>' +
+          '</tr>'
+      }).join('')
+      
+      // 테이블 스크롤
+      const tableWrap = editor.querySelector('.helper-trace-table-wrap')
+      if (tableWrap) {
+        tableWrap.scrollTop = tableWrap.scrollHeight
+      }
     }
     
-    if (stepProgress) {
-      stepProgress.textContent = `${miniStepIndex + 1} / ${miniStepTrace.length}`
+    // 상태 정보 업데이트
+    const stepBadge = editor.querySelector('.helper-step-badge')
+    if (stepBadge) {
+      stepBadge.textContent = `${miniStepIndex + 1} / ${miniStepTrace.length}`
     }
+    
+    const stepDesc = editor.querySelector('.helper-step-desc')
+    if (stepDesc) {
+      stepDesc.textContent = currentStep?.description || '준비 완료'
+    }
+    
+    const iterBadge = editor.querySelector('.helper-iter-badge')
+    if (iterBadge) {
+      if (currentStep?.iteration) {
+        iterBadge.textContent = `🔄 ${currentStep.iteration}번째 반복`
+        iterBadge.style.display = ''
+      } else {
+        iterBadge.style.display = 'none'
+      }
+    }
+    
+    // 버튼 상태 업데이트
+    const nextBtn = editor.querySelector('#mini-step-next')
+    const prevBtn = editor.querySelector('#mini-step-prev')
+    const resetBtn = editor.querySelector('#mini-step-reset')
     
     if (nextBtn) {
       nextBtn.disabled = isFinished
-      nextBtn.innerHTML = isFinished ? '✅ 완료!' : '다음 줄 ▶️'
+      nextBtn.innerHTML = isFinished ? '✅ 완료!' : '▶️ 다음'
+    }
+    if (prevBtn) prevBtn.disabled = isFirst
+    if (resetBtn) resetBtn.disabled = isFirst
+    
+    // 출력 업데이트
+    const outputText = editor.querySelector('.helper-output-text')
+    const outputSection = editor.querySelector('.helper-output-section')
+    if (outputText) {
+      const outputLines = []
+      let currentLine = ''
+      for (let i = 0; i <= miniStepIndex; i++) {
+        const step = miniStepTrace[i]
+        if (step.output !== null) {
+          currentLine += step.output
+          const endChar = step.endChar !== undefined ? step.endChar : '\n'
+          if (endChar === '\n') {
+            outputLines.push(currentLine)
+            currentLine = ''
+          } else {
+            currentLine += endChar
+          }
+        }
+      }
+      if (currentLine) outputLines.push(currentLine)
+      
+      const hasOutput = outputLines.length > 0
+      outputText.textContent = hasOutput ? outputLines.join('\n') : '(아직 출력 없음)'
+      
+      // 출력이 있으면 하이라이트
+      if (outputSection) {
+        if (hasOutput) {
+          outputSection.classList.add('has-output')
+        } else {
+          outputSection.classList.remove('has-output')
+        }
+      }
     }
   }
 }
@@ -3076,25 +3904,26 @@ const attachEvents = () => {
     })
   }
 
-  // 스텝 모드 컨트롤 - 다음
+// 스텝 모드 컨트롤 - 다음
   const miniStepNext = document.querySelector('#mini-step-next')
   if (miniStepNext) {
-    miniStepNext.addEventListener('click', () => {
-      const trace = fakeInterpreter(miniEditorCode).trace
-      if (miniStepIndex < trace.length - 1) {
+    miniStepNext.addEventListener('click', (e) => {
+      e.preventDefault()
+      if (miniStepIndex < miniStepTrace.length - 1) {
         miniStepIndex++
-        renderApp()
+        updateMiniEditorUI()
       }
     })
   }
-  
+
   // 스텝 모드 컨트롤 - 이전
   const miniStepPrev = document.querySelector('#mini-step-prev')
   if (miniStepPrev) {
-    miniStepPrev.addEventListener('click', () => {
+    miniStepPrev.addEventListener('click', (e) => {
+      e.preventDefault()
       if (miniStepIndex > 0) {
         miniStepIndex--
-        renderApp()
+        updateMiniEditorUI()
       }
     })
   }
@@ -3102,7 +3931,8 @@ const attachEvents = () => {
   // 스텝 모드 컨트롤 - 처음으로
   const miniStepReset = document.querySelector('#mini-step-reset')
   if (miniStepReset) {
-    miniStepReset.addEventListener('click', () => {
+    miniStepReset.addEventListener('click', (e) => {
+      e.preventDefault()
       miniStepIndex = 0
       updateMiniEditorUI()
     })
@@ -3226,6 +4056,487 @@ const attachEvents = () => {
       })
     })
     
+    // for문 놀이터 이벤트
+    const rangeSlider = document.querySelector('#range-slider')
+    const runForDemo = document.querySelector('#run-for-demo')
+    const funCards = document.querySelectorAll('.fun-card')
+    
+    if (rangeSlider) {
+      rangeSlider.addEventListener('input', () => {
+        forRangeValue = parseInt(rangeSlider.value)
+        forOutput = []
+        forCurrentI = -1
+        
+        // 슬라이더 값 표시 업데이트
+        const display = document.querySelector('#slider-display')
+        if (display) display.textContent = forRangeValue
+        
+        // range 숫자 업데이트
+        const rangeNum = document.querySelector('.range-num')
+        if (rangeNum) rangeNum.textContent = forRangeValue
+        
+        // 숫자 공 업데이트
+        const ballsContainer = document.querySelector('#number-balls')
+        if (ballsContainer) {
+          let balls = ''
+          for (let i = 0; i < forRangeValue; i++) {
+            balls += `<div class="number-ball">${i}</div>`
+          }
+          ballsContainer.innerHTML = balls
+        }
+        
+        // 출력 초기화
+        const outputDisplay = document.querySelector('#for-output-display')
+        if (outputDisplay) {
+          outputDisplay.innerHTML = '<span class="waiting">실행 버튼을 눌러보세요!</span>'
+        }
+      })
+    }
+    
+    if (runForDemo) {
+      runForDemo.addEventListener('click', async () => {
+        forRunning = true
+        forOutput = []
+        forCurrentI = -1
+        runForDemo.disabled = true
+        runForDemo.textContent = '⏳ 실행 중...'
+        
+        const outputDisplay = document.querySelector('#for-output-display')
+        if (outputDisplay) outputDisplay.innerHTML = ''
+        
+        for (let i = 0; i < forRangeValue; i++) {
+          forCurrentI = i
+          
+          // 숫자 공 하이라이트
+          const balls = document.querySelectorAll('.number-ball')
+          balls.forEach((ball, idx) => {
+            ball.classList.remove('active')
+            if (idx === i) ball.classList.add('active')
+            if (forOutput.includes(idx)) ball.classList.add('done')
+          })
+          
+          await sleep(300)
+          
+          // 출력 추가
+          forOutput.push(i)
+          if (outputDisplay) {
+            outputDisplay.innerHTML += `<span class="out-num pop">${i}</span>`
+          }
+          
+          await sleep(200)
+        }
+        
+        // 완료
+        forRunning = false
+        forCurrentI = -1
+        runForDemo.disabled = false
+        runForDemo.textContent = '▶ 다시 실행'
+        
+        // 모든 공 done 상태로
+        document.querySelectorAll('.number-ball').forEach(ball => {
+          ball.classList.remove('active')
+          ball.classList.add('done')
+        })
+      })
+    }
+    
+    // 재미있는 예시 카드
+    funCards.forEach(card => {
+      card.addEventListener('click', async () => {
+        const example = card.dataset.example
+        const demoArea = document.querySelector('#fun-demo-area')
+        if (!demoArea) return
+        
+        const examples = {
+          stars: {
+            code: 'for i in range(5):\n    print("⭐", end="")',
+            output: '⭐⭐⭐⭐⭐'
+          },
+          countdown: {
+            code: 'for i in range(5, 0, -1):\n    print(i)\nprint("🚀 발사!")',
+            output: '5\n4\n3\n2\n1\n🚀 발사!'
+          },
+          gugudan: {
+            code: 'for i in range(1, 10):\n    print(f"3 x {i} = {3*i}")',
+            output: '3 x 1 = 3\n3 x 2 = 6\n3 x 3 = 9\n...'
+          },
+          emoji: {
+            code: 'for i in range(5):\n    print("😀" * (i+1))',
+            output: '😀\n😀😀\n😀😀😀\n😀😀😀😀\n😀😀😀😀😀'
+          }
+        }
+        
+        const ex = examples[example]
+        demoArea.innerHTML = `
+          <div class="fun-demo-content">
+            <div class="demo-code">
+              <div class="demo-label">📝 코드</div>
+              <pre>${ex.code}</pre>
+            </div>
+            <div class="demo-output">
+              <div class="demo-label">💬 출력</div>
+              <pre>${ex.output}</pre>
+            </div>
+          </div>
+        `
+        demoArea.classList.add('show')
+      })
+    })
+
+    // while문 놀이터 이벤트
+    const countdownSlider = document.querySelector('#countdown-slider')
+    const runCountdownDemo = document.querySelector('#run-countdown-demo')
+    const whileExCards = document.querySelectorAll('.while-ex-card')
+
+    if (countdownSlider) {
+      countdownSlider.addEventListener('input', () => {
+        countdownStart = parseInt(countdownSlider.value)
+        countdownOutput = []
+        countdownCurrent = -1
+
+        // 슬라이더 값 표시 업데이트
+        const display = document.querySelector('#countdown-display')
+        if (display) display.textContent = countdownStart
+
+        // 코드에서 숫자 업데이트
+        const countdownNum = document.querySelector('.countdown-num')
+        if (countdownNum) countdownNum.textContent = countdownStart
+
+        // 숫자 공 업데이트
+        const ballsContainer = document.querySelector('#countdown-balls')
+        if (ballsContainer) {
+          let balls = ''
+          for (let i = countdownStart; i >= 1; i--) {
+            balls += `<div class="countdown-ball">${i}</div>`
+          }
+          balls += `<div class="countdown-ball rocket">🚀</div>`
+          ballsContainer.innerHTML = balls
+        }
+
+        // 조건 표시 초기화
+        const conditionResult = document.querySelector('#condition-result')
+        if (conditionResult) {
+          conditionResult.textContent = '🤔 실행 전'
+          conditionResult.className = 'condition-result'
+        }
+
+        // 출력 초기화
+        const outputDisplay = document.querySelector('#countdown-output-display')
+        if (outputDisplay) {
+          outputDisplay.innerHTML = '<span class="waiting">실행 버튼을 눌러보세요!</span>'
+        }
+      })
+    }
+
+    if (runCountdownDemo) {
+      runCountdownDemo.addEventListener('click', async () => {
+        countdownRunning = true
+        countdownOutput = []
+        countdownCurrent = countdownStart
+        runCountdownDemo.disabled = true
+        runCountdownDemo.textContent = '⏳ 카운트다운 중...'
+
+        const outputDisplay = document.querySelector('#countdown-output-display')
+        const conditionResult = document.querySelector('#condition-result')
+        const ballsContainer = document.querySelector('#countdown-balls')
+        if (outputDisplay) outputDisplay.innerHTML = ''
+
+        // 카운트다운 애니메이션
+        for (let count = countdownStart; count >= 0; count--) {
+          countdownCurrent = count
+
+          // 조건 상태 업데이트
+          if (conditionResult) {
+            if (count > 0) {
+              conditionResult.textContent = `✅ ${count} > 0 → True (계속!)`
+              conditionResult.className = 'condition-result true-state'
+            } else {
+              conditionResult.textContent = `❌ ${count} > 0 → False (종료!)`
+              conditionResult.className = 'condition-result false-state'
+            }
+          }
+
+          // 숫자 공 하이라이트
+          if (ballsContainer) {
+            const balls = ballsContainer.querySelectorAll('.countdown-ball')
+            balls.forEach(ball => {
+              ball.classList.remove('active', 'done')
+              const ballValue = ball.textContent.trim()
+              if (ballValue === String(count) || (ballValue === '🚀' && count === 0)) {
+                ball.classList.add('active')
+              }
+              if (countdownOutput.includes(parseInt(ballValue)) || 
+                  (countdownOutput.includes('🚀') && ballValue === '🚀')) {
+                ball.classList.add('done')
+              }
+            })
+          }
+
+          await sleep(600)
+
+          // 출력 추가
+          if (count > 0) {
+            countdownOutput.push(count)
+            if (outputDisplay) {
+              outputDisplay.innerHTML += `<span class="out-num pop-in">${count}</span>`
+            }
+          } else {
+            // 발사!
+            countdownOutput.push('🚀')
+            if (outputDisplay) {
+              outputDisplay.innerHTML += `<span class="out-num rocket-out pop-in">발사! 🚀</span>`
+            }
+          }
+        }
+
+        // 완료
+        countdownRunning = false
+        runCountdownDemo.disabled = false
+        runCountdownDemo.textContent = '▶ 다시 시작!'
+      })
+    }
+
+    // while문 활용 예시 카드
+    whileExCards.forEach(card => {
+      card.addEventListener('click', () => {
+        const example = card.dataset.whileExample
+        const demoArea = document.querySelector('#while-demo-area')
+        if (!demoArea) return
+
+        const examples = {
+          password: {
+            title: '🔐 비밀번호 맞추기',
+            code: 'password = "1234"\nguess = ""\nwhile guess != password:\n    guess = input("비밀번호: ")\nprint("정답입니다!")',
+            desc: '비밀번호가 맞을 때까지 계속 물어봐요'
+          },
+          sum: {
+            title: '➕ 합계 계산',
+            code: 'total = 0\nnum = 1\nwhile total < 100:\n    total = total + num\n    num = num + 1\nprint("합계:", total)',
+            desc: '합계가 100 이상이 될 때까지 더해요'
+          },
+          guess: {
+            title: '🎲 숫자 맞추기 게임',
+            code: 'answer = 7\nguess = 0\nwhile guess != answer:\n    guess = int(input("숫자: "))\n    if guess < answer:\n        print("더 크게!")\n    elif guess > answer:\n        print("더 작게!")\nprint("정답!")',
+            desc: '정답을 맞출 때까지 힌트를 줘요'
+          }
+        }
+
+        const ex = examples[example]
+        demoArea.innerHTML = `
+          <div class="while-demo-content">
+            <h5>${ex.title}</h5>
+            <div class="demo-code">
+              <pre>${ex.code}</pre>
+            </div>
+            <div class="demo-desc">
+              💡 ${ex.desc}
+            </div>
+          </div>
+        `
+        demoArea.classList.add('show')
+      })
+    })
+
+    // 소개 페이지 미니게임 이벤트
+    const introClickBtn = document.querySelector('#intro-click-btn')
+    const showMagicBtn = document.querySelector('#show-magic-btn')
+    
+    if (introClickBtn && introClicks < 10) {
+      introClickBtn.addEventListener('click', () => {
+        introClicks++
+        // 버튼 효과
+        introClickBtn.classList.add('clicked')
+        setTimeout(() => introClickBtn.classList.remove('clicked'), 150)
+        
+        // 카운터 업데이트
+        const counter = document.querySelector('.counter-num')
+        if (counter) {
+          counter.textContent = introClicks
+          counter.classList.add('pulse')
+          setTimeout(() => counter.classList.remove('pulse'), 300)
+        }
+        
+        // 10번 완료시 전체 리렌더
+        if (introClicks >= 10) {
+          renderApp()
+        }
+      })
+    }
+    
+    if (showMagicBtn) {
+      showMagicBtn.addEventListener('click', () => {
+        introShowMagic = true
+        renderApp()
+      })
+    }
+
+    // break/continue 실험 이벤트 핸들러
+    const bcBlocks = document.querySelectorAll('.bc-block')
+    const bcRunBtn = document.querySelector('#run-bc-experiment')
+    
+    bcBlocks.forEach(block => {
+      block.addEventListener('click', () => {
+        bcSelectedBlock = block.dataset.block
+        bcOutput = []
+        bcFeedback = ''
+        bcHighlight = -1
+        renderApp()
+      })
+    })
+    
+    if (bcRunBtn) {
+      bcRunBtn.addEventListener('click', async () => {
+        if (!bcSelectedBlock || bcRunning) return
+        
+        bcRunning = true
+        bcOutput = []
+        bcFeedback = ''
+        
+        // 버튼 비활성화
+        bcRunBtn.disabled = true
+        
+        // 실험 실행
+        for (let i = 0; i < 6; i++) {
+          // for 문 줄 하이라이트
+          bcHighlight = 0
+          updateBcExperimentUI(i)
+          await sleep(400)
+          
+          // if 조건 확인
+          bcHighlight = 1
+          updateBcExperimentUI(i)
+          await sleep(400)
+          
+          if (i === 3) {
+            // break 또는 continue 실행
+            bcHighlight = 2
+            updateBcExperimentUI(i)
+            await sleep(500)
+            
+            if (bcSelectedBlock === 'break') {
+              // break: 반복문 즉시 종료
+              bcFeedback = 'i가 3이 되는 순간 반복문이 완전히 종료됩니다.'
+              break
+            } else {
+              // continue: 이번 반복만 건너뜀
+              bcFeedback = 'i가 3일 때만 출력이 생략되고 반복은 계속됩니다.'
+              continue
+            }
+          }
+          
+          // print(i) 실행
+          bcHighlight = 3
+          updateBcExperimentUI(i)
+          await sleep(300)
+          bcOutput.push(String(i))
+          updateBcExperimentUI(i)
+          await sleep(200)
+        }
+        
+        // 실행 완료
+        bcHighlight = -1
+        bcRunning = false
+        renderApp()
+      })
+    }
+
+    // 줄 토글 실험 이벤트 핸들러
+    const togglePrint = document.querySelector('#toggle-print')
+    const toggleIncrement = document.querySelector('#toggle-increment')
+    const runExperimentBtn = document.querySelector('#run-experiment')
+    
+    if (togglePrint) {
+      togglePrint.addEventListener('change', () => {
+        experimentLines.print = togglePrint.checked
+        // 체크 상태 바뀌면 결과 초기화
+        experimentOutput = []
+        experimentStep = 0
+        experimentHighlight = -1
+        renderApp()
+      })
+    }
+    
+    if (toggleIncrement) {
+      toggleIncrement.addEventListener('change', () => {
+        experimentLines.increment = toggleIncrement.checked
+        // 체크 상태 바뀌면 결과 초기화
+        experimentOutput = []
+        experimentStep = 0
+        experimentHighlight = -1
+        renderApp()
+      })
+    }
+    
+if (runExperimentBtn) {
+      runExperimentBtn.addEventListener('click', async () => {
+        // 현재 체크박스 상태 다시 읽기
+        const printChecked = document.querySelector('#toggle-print')?.checked ?? true
+        const incrementChecked = document.querySelector('#toggle-increment')?.checked ?? true
+
+        experimentRunning = true
+        experimentOutput = []
+        experimentStep = 0
+
+        // 실행 시작 전 UI 업데이트
+        const runBtn = document.querySelector('#run-experiment')
+        if (runBtn) runBtn.disabled = true
+
+        // while문 시뮬레이션
+        let i = 0
+        let loopCount = 0
+        const maxLoops = 5 // 무한 루프 방지
+        
+        // 1. i = 0 초기화 줄
+        experimentHighlight = 0
+        updateExperimentUI(i)
+        await sleep(500)
+        
+        // 2. while 루프 시작
+        while (i < 3 && loopCount < maxLoops) {
+          loopCount++
+          
+          // while 조건 줄 하이라이트
+          experimentHighlight = 1
+          updateExperimentUI(i)
+          await sleep(400)
+          
+          // print(i) 줄 (체크된 경우만)
+          if (printChecked) {
+            experimentHighlight = 2
+            updateExperimentUI(i)
+            await sleep(400)
+            experimentOutput.push(String(i))
+            updateExperimentUI(i)
+            await sleep(300)
+          }
+          
+          // i += 1 줄 (체크된 경우만)
+          if (incrementChecked) {
+            experimentHighlight = 3
+            i++ // 실제로 i 증가
+            updateExperimentUI(i)
+            await sleep(400)
+          } else {
+            // i += 1이 꺼져있으면 i가 증가하지 않음 - 무한 루프 시뮬레이션
+            experimentHighlight = 3
+            updateExperimentUI(i)
+            await sleep(400)
+            
+            // 무한 루프 경고 메시지 추가
+            if (loopCount >= maxLoops) {
+              experimentOutput.push('⚠️ 무한 반복! (5회에서 멈춤)')
+            }
+          }
+        }
+
+        // 실행 완료
+        experimentHighlight = -1
+        experimentRunning = false
+        experimentStep = 1
+        renderApp()
+      })
+    }
+
     // 퀴즈 이벤트 핸들러
     const quizOptions = document.querySelectorAll('.quiz-option')
     quizOptions.forEach(option => {
@@ -3390,17 +4701,17 @@ const attachEvents = () => {
       })
     }
     
-    // 실행 흐름 컨트롤 버튼들
+// 실행 흐름 컨트롤 버튼들
     const traceFirstBtn = document.querySelector('#trace-first')
     const tracePrevBtn = document.querySelector('#trace-prev')
     const traceNextBtn = document.querySelector('#trace-next')
     const traceLastBtn = document.querySelector('#trace-last')
-    
+
     if (traceFirstBtn) {
       traceFirstBtn.addEventListener('click', (e) => {
         e.preventDefault()
         projectTraceIndex = 0
-        renderApp()
+        updateProjectTraceUI()
       })
     }
     if (tracePrevBtn) {
@@ -3408,7 +4719,7 @@ const attachEvents = () => {
         e.preventDefault()
         if (projectTraceIndex > 0) {
           projectTraceIndex--
-          renderApp()
+          updateProjectTraceUI()
         }
       })
     }
@@ -3417,7 +4728,7 @@ const attachEvents = () => {
         e.preventDefault()
         if (projectTraceIndex < projectTrace.length - 1) {
           projectTraceIndex++
-          renderApp()
+          updateProjectTraceUI()
         }
       })
     }
@@ -3425,7 +4736,7 @@ const attachEvents = () => {
       traceLastBtn.addEventListener('click', (e) => {
         e.preventDefault()
         projectTraceIndex = projectTrace.length - 1
-        renderApp()
+        updateProjectTraceUI()
       })
     }
 

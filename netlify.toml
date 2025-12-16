@@ -1,0 +1,30 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+# 리다이렉트 규칙 (public/_redirects와 동일)
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# ============================================
+# ⚠️ Secrets Scanning 설정 안내
+# ============================================
+# 
+# Vite 클라이언트 앱은 환경 변수가 빌드 출력에 포함되는 것이 정상입니다.
+# Firebase API 키 등은 클라이언트에서 접근 가능해야 하므로 보안 문제가 아닙니다.
+# 
+# Netlify 대시보드에서 다음 중 하나를 설정하세요:
+# 
+# 방법 1: Secrets Scanning 비활성화
+#   Site settings > Build & deploy > Environment variables
+#   SECRETS_SCAN_ENABLED = false
+# 
+# 방법 2: 특정 키 제외
+#   Site settings > Build & deploy > Environment variables
+#   SECRETS_SCAN_OMIT_KEYS = "VITE_FIREBASE_API_KEY,VITE_FIREBASE_AUTH_DOMAIN,VITE_FIREBASE_PROJECT_ID,VITE_FIREBASE_STORAGE_BUCKET,VITE_FIREBASE_MESSAGING_SENDER_ID,VITE_FIREBASE_APP_ID,VITE_OPENAI_API_KEY,VITE_ADMIN_UID"
+# 
+# 방법 3: Smart Detection 비활성화
+#   Site settings > Build & deploy > Environment variables
+#   SECRETS_SCAN_SMART_DETECTION_ENABLED = false

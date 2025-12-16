@@ -5314,7 +5314,7 @@ if (runExperimentBtn) {
         const result = fakeInterpreter(code)
 
         if (result.trace.length > 0) {
-          const hasLoop = result.trace.some(t => t.type === 'for-start' || t.type === 'while-start')
+          const hasLoop = result.trace.some(t => t.type === 'for' || t.type === 'for-end' || t.type === 'while' || t.type === 'while-end')
           if (!hasLoop) {
             if (errorSection) errorSection.style.display = 'block'
             if (errorDisplay) {

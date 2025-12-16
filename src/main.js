@@ -1767,6 +1767,162 @@ const fakeInterpreter = (code) => {
         
         // 본문 실행
         for (const bodyItem of bodyLines) {
+          // 중첩 for문 처리
+          const nestedForMatch = bodyItem.content.match(/^for\s+(\w+)\s+in\s+range\((\d+)(?:,\s*(\d+))?\)/)
+          if (nestedForMatch) {
+            const nestedVarName = nestedForMatch[1]
+            const nestedStart = nestedForMatch[3] ? parseInt(nestedForMatch[2]) : 0
+            const nestedEnd = nestedForMatch[3] ? parseInt(nestedForMatch[3]) : parseInt(nestedForMatch[2])
+            
+            // 중첩 for문의 본문 찾기
+            const nestedBodyLines = []
+            // bodyItem.lineNum은 1-based이므로 0-based 인덱스로 변환
+            const nestedForLineIdx = bodyItem.lineNum - 1
+            if (nestedForLineIdx >= lines.length) continue
+            
+            const nestedForLine = lines[nestedForLineIdx]
+            const nestedForIndent = nestedForLine.length - nestedForLine.trimStart().length
+            
+            let nestedJ = nestedForLineIdx + 1
+            while (nestedJ < lines.length) {
+              const nestedBodyLine = lines[nestedJ]
+              const nestedBodyTrimmed = nestedBodyLine.trim()
+              if (!nestedBodyTrimmed) { nestedJ++; continue }
+              
+              const nestedBodyIndent = nestedBodyLine.length - nestedBodyLine.trimStart().length
+              // 중첩 for문과 같은 들여쓰기거나 더 작으면 중첩 for문의 본문이 아님
+              if (nestedBodyIndent <= nestedForIndent) break
+              
+              nestedBodyLines.push({ lineNum: nestedJ + 1, content: nestedBodyTrimmed })
+              nestedJ++
+            }
+            
+            // 중첩 for문 실행
+            for (let nestedI = nestedStart; nestedI < nestedEnd; nestedI++) {
+              const nestedIterationNum = nestedI - nestedStart + 1
+              variables[nestedVarName] = nestedI
+              
+              // 중첩 for문 시작
+              stepNum++
+              trace.push({
+                step: stepNum,
+                lineNum: bodyItem.lineNum,
+                code: bodyItem.content,
+                variables: { ...variables },
+                output: null,
+                iteration: nestedIterationNum,
+                totalIterations: nestedEnd - nestedStart,
+                type: 'for',
+                description: `🔄 ${nestedIterationNum}번째 반복 시작 (${nestedVarName} = ${nestedI})`
+              })
+              
+              // 중첩 for문 본문 실행
+              for (const nestedBodyItem of nestedBodyLines) {
+                stepNum++
+                let output = null
+                
+                // print 문 처리
+                const nestedPrintMatch = nestedBodyItem.content.match(/^print\((.+)\)$/)
+                if (nestedPrintMatch) {
+                  let printContent = nestedPrintMatch[1]
+                  let endChar = '\n'
+                  let sepChar = ' '
+                  
+                  const endMatch = printContent.match(/,\s*end\s*=\s*["'](.*)["']/)
+                  if (endMatch) {
+                    endChar = endMatch[1]
+                    printContent = printContent.replace(/,\s*end\s*=\s*["'].*["']/, '')
+                  }
+                  
+                  const sepMatch = printContent.match(/,\s*sep\s*=\s*["'](.*)["']/)
+                  if (sepMatch) {
+                    sepChar = sepMatch[1]
+                    printContent = printContent.replace(/,\s*sep\s*=\s*["'].*["']/, '')
+                  }
+                  
+                  const args = printContent.split(/,\s*(?=(?:[^"']*["'][^"']*["'])*[^"']*$)/).filter(a => a.trim())
+                  let outputParts = []
+                  
+                  for (let arg of args) {
+                    arg = arg.trim()
+                    
+                    // 변수 치환 (i, j 모두 포함)
+                    for (const [vName, vVal] of Object.entries(variables)) {
+                      const regex = new RegExp(`\\b${vName}\\b`, 'g')
+                      arg = arg.replace(regex, vVal)
+                    }
+                    
+                    try {
+                      if ((arg.startsWith('"') && arg.endsWith('"')) || (arg.startsWith("'") && arg.endsWith("'"))) {
+                        outputParts.push(arg.slice(1, -1))
+                      } else {
+                        outputParts.push(eval(arg))
+                      }
+                    } catch {
+                      outputParts.push(arg)
+                    }
+                  }
+                  
+                  output = outputParts.join(sepChar)
+                  outputs.push({ text: String(output), endChar: endChar })
+                }
+                
+                // 변수 할당 처리
+                let currentEndChar = '\n'
+                const nestedAssignMatch = nestedBodyItem.content.match(/^(\w+)\s*=\s*(.+)$/)
+                if (nestedAssignMatch && !nestedBodyItem.content.includes('print')) {
+                  const vName = nestedAssignMatch[1]
+                  let vValue = nestedAssignMatch[2]
+                  
+                  for (const [n, v] of Object.entries(variables)) {
+                    const regex = new RegExp(`\\b${n}\\b`, 'g')
+                    vValue = vValue.replace(regex, v)
+                  }
+                  
+                  try {
+                    variables[vName] = eval(vValue)
+                  } catch {
+                    variables[vName] = vValue
+                  }
+                }
+                
+                if (nestedPrintMatch) {
+                  const endMatch = nestedBodyItem.content.match(/end\s*=\s*["'](.*)["']/)
+                  currentEndChar = endMatch ? endMatch[1] : '\n'
+                }
+                
+                trace.push({
+                  step: stepNum,
+                  lineNum: nestedBodyItem.lineNum,
+                  code: nestedBodyItem.content,
+                  variables: { ...variables },
+                  output: output,
+                  endChar: currentEndChar,
+                  iteration: nestedIterationNum,
+                  totalIterations: nestedEnd - nestedStart,
+                  type: output !== null ? 'print' : 'statement',
+                  description: output !== null ? `💬 "${output}" 출력` : `📝 코드 실행`
+                })
+              }
+              
+              // 중첩 for문 종료
+              stepNum++
+              trace.push({
+                step: stepNum,
+                lineNum: bodyItem.lineNum,
+                code: bodyItem.content,
+                variables: { ...variables },
+                output: null,
+                iteration: nestedEnd - nestedStart,
+                totalIterations: nestedEnd - nestedStart,
+                type: 'for-end',
+                description: `✅ 중첩 반복 완료! (${nestedVarName} = ${nestedI})`
+              })
+            }
+            
+            continue
+          }
+          
           stepNum++
           let output = null
           
@@ -1884,6 +2040,278 @@ const fakeInterpreter = (code) => {
       continue
     }
     
+    // while 조건문 감지
+    const whileMatch = trimmed.match(/^while\s+(.+):$/)
+    if (whileMatch) {
+      const condition = whileMatch[1].trim()
+      
+      // while 루프 본문 찾기
+      const bodyLines = []
+      let j = lineIdx + 1
+      const whileIndent = line.length - line.trimStart().length
+      
+      while (j < lines.length) {
+        const bodyLine = lines[j]
+        const bodyTrimmed = bodyLine.trim()
+        if (!bodyTrimmed) { j++; continue }
+        
+        const bodyIndent = bodyLine.length - bodyLine.trimStart().length
+        if (bodyIndent <= whileIndent) break
+        
+        bodyLines.push({ lineNum: j + 1, content: bodyTrimmed })
+        j++
+      }
+      
+      // while 루프 실행 (조건이 참인 동안 반복)
+      let iterationNum = 0
+      const maxIterations = 1000 // 무한 루프 방지
+      
+      while (iterationNum < maxIterations) {
+        // 조건 평가
+        let conditionResult = false
+        try {
+          // 조건식에서 변수 치환
+          let evalCondition = condition
+          for (const [vName, vVal] of Object.entries(variables)) {
+            const regex = new RegExp(`\\b${vName}\\b`, 'g')
+            evalCondition = evalCondition.replace(regex, vVal)
+          }
+          conditionResult = eval(evalCondition)
+        } catch {
+          conditionResult = false
+        }
+        
+        if (!conditionResult) {
+          // 조건이 거짓이면 while 루프 종료
+          stepNum++
+          trace.push({
+            step: stepNum,
+            lineNum: lineNum,
+            code: trimmed,
+            variables: { ...variables },
+            output: null,
+            iteration: iterationNum,
+            totalIterations: iterationNum,
+            type: 'while-end',
+            description: `✅ while 루프 종료 (조건: ${condition} = false)`
+          })
+          break
+        }
+        
+        iterationNum++
+        
+        // while 문 실행 단계
+        stepNum++
+        trace.push({
+          step: stepNum,
+          lineNum: lineNum,
+          code: trimmed,
+          variables: { ...variables },
+          output: null,
+          iteration: iterationNum,
+          totalIterations: null,
+          type: 'while',
+          description: `🔄 ${iterationNum}번째 반복 시작 (조건: ${condition} = true)`
+        })
+        
+        // 본문 실행
+        for (const bodyItem of bodyLines) {
+          stepNum++
+          let output = null
+          
+          // print 문 처리
+          const printMatch = bodyItem.content.match(/^print\((.+)\)$/)
+          if (printMatch) {
+            let printContent = printMatch[1]
+            let endChar = '\n'
+            let sepChar = ' '
+            
+            const endMatch = printContent.match(/,\s*end\s*=\s*["'](.*)["']/)
+            if (endMatch) {
+              endChar = endMatch[1]
+              printContent = printContent.replace(/,\s*end\s*=\s*["'].*["']/, '')
+            }
+            
+            const sepMatch = printContent.match(/,\s*sep\s*=\s*["'](.*)["']/)
+            if (sepMatch) {
+              sepChar = sepMatch[1]
+              printContent = printContent.replace(/,\s*sep\s*=\s*["'].*["']/, '')
+            }
+            
+            const args = printContent.split(/,\s*(?=(?:[^"']*["'][^"']*["'])*[^"']*$)/).filter(a => a.trim())
+            let outputParts = []
+            
+            for (let arg of args) {
+              arg = arg.trim()
+              
+              // 변수 치환
+              for (const [vName, vVal] of Object.entries(variables)) {
+                const regex = new RegExp(`\\b${vName}\\b`, 'g')
+                arg = arg.replace(regex, vVal)
+              }
+              
+              try {
+                if ((arg.startsWith('"') && arg.endsWith('"')) || (arg.startsWith("'") && arg.endsWith("'"))) {
+                  outputParts.push(arg.slice(1, -1))
+                } else {
+                  outputParts.push(eval(arg))
+                }
+              } catch {
+                outputParts.push(arg)
+              }
+            }
+            
+            output = outputParts.join(sepChar)
+            outputs.push({ text: String(output), endChar: endChar })
+          }
+          
+          // 변수 할당 처리 (i+=1 같은 복합 할당 포함)
+          let currentEndChar = '\n'
+          const assignMatch = bodyItem.content.match(/^(\w+)\s*=\s*(.+)$/)
+          const compoundAssignMatch = bodyItem.content.match(/^(\w+)\s*([+\-*/])=(.+)$/)
+          
+          if (compoundAssignMatch) {
+            const vName = compoundAssignMatch[1]
+            const op = compoundAssignMatch[2]
+            let vValue = compoundAssignMatch[3]
+            
+            // 변수 치환
+            for (const [n, v] of Object.entries(variables)) {
+              const regex = new RegExp(`\\b${n}\\b`, 'g')
+              vValue = vValue.replace(regex, v)
+            }
+            
+            try {
+              const currentVal = variables[vName] !== undefined ? variables[vName] : 0
+              const increment = eval(vValue)
+              if (op === '+') {
+                variables[vName] = currentVal + increment
+              } else if (op === '-') {
+                variables[vName] = currentVal - increment
+              } else if (op === '*') {
+                variables[vName] = currentVal * increment
+              } else if (op === '/') {
+                variables[vName] = currentVal / increment
+              }
+            } catch {
+              // 에러 무시
+            }
+          } else if (assignMatch && !bodyItem.content.includes('print')) {
+            const vName = assignMatch[1]
+            let vValue = assignMatch[2]
+            
+            // 변수 치환
+            for (const [n, v] of Object.entries(variables)) {
+              const regex = new RegExp(`\\b${n}\\b`, 'g')
+              vValue = vValue.replace(regex, v)
+            }
+            
+            try {
+              variables[vName] = eval(vValue)
+            } catch {
+              variables[vName] = vValue
+            }
+          }
+          
+          if (printMatch) {
+            const endMatch = bodyItem.content.match(/end\s*=\s*["'](.*)["']/)
+            currentEndChar = endMatch ? endMatch[1] : '\n'
+          }
+          
+          trace.push({
+            step: stepNum,
+            lineNum: bodyItem.lineNum,
+            code: bodyItem.content,
+            variables: { ...variables },
+            output: output,
+            endChar: currentEndChar,
+            iteration: iterationNum,
+            totalIterations: null,
+            type: output !== null ? 'print' : 'statement',
+            description: output !== null ? `💬 "${output}" 출력` : `📝 코드 실행`
+          })
+        }
+      }
+      
+      lineIdx = j - 1 // 본문 건너뛰기
+      continue
+    }
+    
+    // 변수 할당 (while문 처리 전에 먼저 처리)
+    const assignMatch = trimmed.match(/^(\w+)\s*=\s*(.+)$/)
+    const compoundAssignMatch = trimmed.match(/^(\w+)\s*([+\-*/])=(.+)$/)
+    
+    if (compoundAssignMatch) {
+      const vName = compoundAssignMatch[1]
+      const op = compoundAssignMatch[2]
+      let vValue = compoundAssignMatch[3]
+      
+      // 변수 치환
+      for (const [n, v] of Object.entries(variables)) {
+        const regex = new RegExp(`\\b${n}\\b`, 'g')
+        vValue = vValue.replace(regex, v)
+      }
+      
+      try {
+        const currentVal = variables[vName] !== undefined ? variables[vName] : 0
+        const increment = eval(vValue)
+        if (op === '+') {
+          variables[vName] = currentVal + increment
+        } else if (op === '-') {
+          variables[vName] = currentVal - increment
+        } else if (op === '*') {
+          variables[vName] = currentVal * increment
+        } else if (op === '/') {
+          variables[vName] = currentVal / increment
+        }
+      } catch {
+        // 에러 무시
+      }
+      
+      stepNum++
+      trace.push({
+        step: stepNum,
+        lineNum: lineNum,
+        code: trimmed,
+        variables: { ...variables },
+        output: null,
+        iteration: null,
+        totalIterations: null,
+        type: 'assign',
+        description: `📝 ${vName} = ${variables[vName]}`
+      })
+      continue
+    } else if (assignMatch) {
+      const vName = assignMatch[1]
+      let vValue = assignMatch[2]
+      
+      // 변수 치환
+      for (const [n, v] of Object.entries(variables)) {
+        const regex = new RegExp(`\\b${n}\\b`, 'g')
+        vValue = vValue.replace(regex, v)
+      }
+      
+      try {
+        variables[vName] = eval(vValue)
+      } catch {
+        variables[vName] = vValue
+      }
+      
+      stepNum++
+      trace.push({
+        step: stepNum,
+        lineNum: lineNum,
+        code: trimmed,
+        variables: { ...variables },
+        output: null,
+        iteration: null,
+        totalIterations: null,
+        type: 'assign',
+        description: `📝 ${vName} = ${variables[vName]}`
+      })
+      continue
+    }
+    
     // 단순 print 문
     const printMatch = trimmed.match(/^print\((.+)\)$/)
     if (printMatch) {
@@ -1908,33 +2336,6 @@ const fakeInterpreter = (code) => {
         totalIterations: null,
         type: 'print',
         description: `💬 "${output}" 출력`
-      })
-      continue
-    }
-    
-    // 변수 할당
-    const assignMatch = trimmed.match(/^(\w+)\s*=\s*(.+)$/)
-    if (assignMatch) {
-      stepNum++
-      const vName = assignMatch[1]
-      let vValue = assignMatch[2]
-      
-      try {
-        variables[vName] = eval(vValue)
-      } catch {
-        variables[vName] = vValue
-      }
-      
-      trace.push({
-        step: stepNum,
-        lineNum: lineNum,
-        code: trimmed,
-        variables: { ...variables },
-        output: null,
-        iteration: null,
-        totalIterations: null,
-        type: 'assign',
-        description: `📝 ${vName} = ${variables[vName]}`
       })
       continue
     }
@@ -4051,7 +4452,7 @@ const attachEvents = () => {
       try {
         await signOut(auth)
       } finally {
-        window.location.href = '/'
+        window.location.href = '/student.html'
       }
     })
   }
@@ -5136,20 +5537,43 @@ if (runExperimentBtn) {
     const stepStartBtn = document.querySelector('#btn-step-start')
     const editorHost = document.querySelector('#code-editor')
 
-    // ACE Editor 초기화 (한 번만)
-    if (editorHost && !traceEditor && typeof ace !== 'undefined') {
-      traceEditor = ace.edit(editorHost)
-      traceEditor.setTheme('ace/theme/monokai')
-      traceEditor.session.setMode('ace/mode/python')
-      traceEditor.setValue(pythonCode || starterCode)
-      traceEditor.setOptions({
-        fontSize: 16,
-        fontFamily: 'Consolas, Monaco, monospace',
-        tabSize: 4,
-        useSoftTabs: true,
-        wrap: true,
-        showPrintMargin: false
-      })
+    // ACE Editor 초기화
+    if (editorHost && typeof ace !== 'undefined') {
+      // 에디터가 없거나 DOM 요소가 변경된 경우 재초기화
+      if (!traceEditor || traceEditor.container !== editorHost) {
+        // 기존 에디터가 있으면 제거
+        if (traceEditor) {
+          traceEditor.destroy()
+        }
+        traceEditor = ace.edit(editorHost)
+        traceEditor.setTheme('ace/theme/monokai')
+        traceEditor.session.setMode('ace/mode/python')
+        traceEditor.setValue(pythonCode || starterCode)
+        traceEditor.setOptions({
+          fontSize: 16,
+          fontFamily: 'Consolas, Monaco, monospace',
+          tabSize: 4,
+          useSoftTabs: true,
+          wrap: true,
+          showPrintMargin: false,
+          readOnly: false
+        })
+      } else {
+        // 에디터가 이미 있으면 값만 업데이트
+        traceEditor.setValue(pythonCode || starterCode)
+      }
+    } else if (editorHost && typeof ace === 'undefined') {
+      // ACE Editor가 로드되지 않은 경우 textarea 폴백
+      if (!editorHost.querySelector('textarea')) {
+        const textarea = document.createElement('textarea')
+        textarea.style.width = '100%'
+        textarea.style.height = '400px'
+        textarea.style.fontFamily = 'monospace'
+        textarea.style.padding = '10px'
+        textarea.value = pythonCode || starterCode
+        editorHost.innerHTML = ''
+        editorHost.appendChild(textarea)
+      }
     }
 
     // 예제 불러오기

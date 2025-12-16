@@ -5,6 +5,7 @@ const loginBtn = document.getElementById('google-login-btn')
 const userInfoEl = document.getElementById('google-user-info')
 const entryLinksEl = document.getElementById('entry-links')
 const teacherLinkEl = document.getElementById('teacher-link')
+const studentLinkEl = document.getElementById('student-link')
 
 const ADMIN_UID = 'AMu571T4XmRh7CWxIliZA0x0lkP2'
 
@@ -59,4 +60,13 @@ onAuthStateChanged(auth, (user) => {
 
 // 초기 UI 상태
 updateUIForUser(auth.currentUser)
+
+// 학생으로 시작하기 버튼 클릭 이벤트
+if (studentLinkEl) {
+  studentLinkEl.addEventListener('click', (e) => {
+    console.log('학생으로 시작 버튼 클릭됨')
+    e.preventDefault()
+    window.location.href = '/student.html'
+  })
+}
 

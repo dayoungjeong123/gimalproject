@@ -7713,3 +7713,283 @@ textarea:focus {
     align-self: stretch;
   }
 }
+
+/* ============================================
+   👨‍🏫 교사 모니터링 페이지 (타원 형태 스타일)
+   ============================================ */
+.teacher-layout {
+  display: flex;
+  gap: 1.5rem;
+  padding: 2rem;
+  min-height: 100vh;
+  max-width: 1600px;
+  margin: 0 auto;
+}
+
+.teacher-sidebar {
+  width: 280px;
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 24px;
+  padding: 1.5rem;
+  box-shadow: 0 18px 45px rgba(148, 163, 184, 0.35);
+  height: fit-content;
+  position: sticky;
+  top: 2rem;
+}
+
+.teacher-sidebar-title {
+  margin: 0 0 1.5rem 0;
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: var(--text-dark);
+  text-align: center;
+  padding-bottom: 1rem;
+  border-bottom: 2px solid var(--pink-light);
+}
+
+.teacher-filter-section {
+  margin-bottom: 2rem;
+}
+
+.teacher-filter-section h3 {
+  margin: 0 0 1rem 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-dark);
+  padding: 0.75rem 1rem;
+  background: linear-gradient(135deg, var(--purple-light), var(--pink-light));
+  border-radius: 16px;
+  text-align: center;
+}
+
+.teacher-filter-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-height: 300px;
+  overflow-y: auto;
+  padding: 0.5rem;
+}
+
+.teacher-filter-list label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 1rem;
+  background: rgba(255, 255, 255, 0.8);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: 2px solid transparent;
+}
+
+.teacher-filter-list label:hover {
+  background: var(--blue-light);
+  transform: translateX(4px);
+}
+
+.teacher-filter-list input[type="checkbox"]:checked + span,
+.teacher-filter-list label:has(input[type="checkbox"]:checked) {
+  background: linear-gradient(135deg, var(--blue-medium), var(--purple-medium));
+  color: white;
+  font-weight: 600;
+  border-color: var(--blue-accent);
+}
+
+.teacher-user-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-height: 300px;
+  overflow-y: auto;
+  padding: 0.5rem;
+}
+
+.teacher-user-item {
+  padding: 0.75rem 1rem;
+  background: rgba(255, 255, 255, 0.8);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: 2px solid transparent;
+  text-align: center;
+  font-weight: 500;
+}
+
+.teacher-user-item:hover {
+  background: var(--mint-light);
+  transform: translateX(4px);
+}
+
+.teacher-user-item.active {
+  background: linear-gradient(135deg, var(--mint-medium), var(--blue-medium));
+  color: white;
+  font-weight: 600;
+  border-color: var(--mint-accent);
+}
+
+.teacher-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.teacher-data-list-section {
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 24px;
+  padding: 1.5rem;
+  box-shadow: 0 18px 45px rgba(148, 163, 184, 0.35);
+}
+
+.teacher-section-title {
+  margin: 0 0 1.5rem 0;
+  font-size: 1.3rem;
+  font-weight: 800;
+  color: var(--text-dark);
+  padding-bottom: 1rem;
+  border-bottom: 2px solid var(--pink-light);
+}
+
+.teacher-submission-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  max-height: 400px;
+  overflow-y: auto;
+  padding: 0.5rem;
+}
+
+.teacher-submission-item {
+  padding: 1rem 1.25rem;
+  background: rgba(255, 255, 255, 0.8);
+  border-radius: 16px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: 2px solid transparent;
+}
+
+.teacher-submission-item:hover {
+  background: var(--purple-light);
+  transform: translateX(4px);
+  box-shadow: 0 4px 12px rgba(180, 140, 200, 0.2);
+}
+
+.teacher-submission-item.selected {
+  background: linear-gradient(135deg, var(--purple-medium), var(--pink-medium));
+  color: white;
+  font-weight: 600;
+  border-color: var(--purple-accent);
+  box-shadow: 0 6px 20px rgba(180, 140, 200, 0.3);
+}
+
+.teacher-submission-item .submission-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.teacher-submission-item .submission-name {
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.teacher-submission-item .submission-meta {
+  font-size: 0.85rem;
+  opacity: 0.8;
+  display: flex;
+  gap: 0.75rem;
+}
+
+.teacher-submission-item .submission-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.teacher-panel {
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 24px;
+  padding: 1.5rem;
+  box-shadow: 0 18px 45px rgba(148, 163, 184, 0.35);
+  min-height: 300px;
+}
+
+.teacher-code-view {
+  background: #1e1e2e;
+  color: #d4d4d4;
+  padding: 1.5rem;
+  border-radius: 16px;
+  font-family: 'JetBrains Mono', 'Consolas', monospace;
+  font-size: 0.9rem;
+  line-height: 1.6;
+  overflow-x: auto;
+  margin: 0;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.teacher-text-view {
+  padding: 1.5rem;
+  background: var(--blue-light);
+  border-radius: 16px;
+  min-height: 200px;
+  line-height: 1.8;
+  color: var(--text-dark);
+}
+
+.teacher-drawing-view {
+  padding: 1.5rem;
+  background: var(--mint-light);
+  border-radius: 16px;
+  min-height: 300px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.teacher-drawing-placeholder {
+  text-align: center;
+  color: var(--text-medium);
+  font-size: 1rem;
+}
+
+.teacher-drawing-view img {
+  max-width: 100%;
+  max-height: 500px;
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+}
+
+/* 반응형 디자인 */
+@media (max-width: 1024px) {
+  .teacher-layout {
+    flex-direction: column;
+    padding: 1rem;
+  }
+
+  .teacher-sidebar {
+    width: 100%;
+    position: static;
+  }
+
+  .teacher-main {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .teacher-layout {
+    padding: 0.75rem;
+    gap: 1rem;
+  }
+
+  .teacher-sidebar,
+  .teacher-data-list-section,
+  .teacher-panel {
+    border-radius: 20px;
+    padding: 1.25rem;
+  }
+}

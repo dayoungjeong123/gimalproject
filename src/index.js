@@ -58,24 +58,39 @@ if (loginBtn) {
 }
 
 // 학생으로 시작하기 버튼 클릭 이벤트
-// 주의: preventDefault()를 사용하지 않고 <a> 태그의 기본 동작을 사용
-// 단, 로그인 상태만 확인하고 미로그인 시에만 기본 동작을 막음
+// Netlify 환경에서 인증 상태 동기화를 고려한 안정적인 처리
 if (studentLinkEl) {
-  studentLinkEl.addEventListener('click', (e) => {
-    // 로그인 상태 확인
+  studentLinkEl.addEventListener('click', async (e) => {
+    e.preventDefault()
+    
+    // 인증 상태를 여러 방법으로 확인 (Netlify 환경 대응)
     const currentUser = auth.currentUser
     console.log('학생으로 시작 버튼 클릭됨, 로그인 상태:', !!currentUser, 'isLoggedIn:', isLoggedIn)
     
-    // 로그인되지 않은 경우에만 기본 동작(페이지 이동)을 막음
-    if (!currentUser || !isLoggedIn) {
-      e.preventDefault()
+    // 로그인되지 않은 경우
+    if (!currentUser && !isLoggedIn) {
       alert('먼저 Google 로그인을 해주세요.')
       return false
     }
     
-    // 로그인된 경우: <a> 태그의 기본 동작(href="/student.html")을 그대로 사용
-    // preventDefault()를 호출하지 않으므로 브라우저가 자연스럽게 페이지 이동 처리
-    console.log('페이지 이동 허용: /student.html')
+    // 로그인된 경우: 세션 스토리지에 플래그 저장하여 리다이렉트 루프 방지
+    if (currentUser || isLoggedIn) {
+      sessionStorage.setItem('auth_verified', 'true')
+      sessionStorage.setItem('auth_uid', currentUser?.uid || 'verified')
+      console.log('페이지 이동 허용: /student.html (인증 확인됨)')
+      window.location.href = '/student.html'
+    } else {
+      // 인증 상태가 불확실한 경우 잠시 대기 후 재확인
+      await new Promise(resolve => setTimeout(resolve, 200))
+      const retryUser = auth.currentUser
+      if (retryUser) {
+        sessionStorage.setItem('auth_verified', 'true')
+        sessionStorage.setItem('auth_uid', retryUser.uid)
+        window.location.href = '/student.html'
+      } else {
+        alert('로그인 상태를 확인할 수 없습니다. 다시 로그인해주세요.')
+      }
+    }
   })
 }
 

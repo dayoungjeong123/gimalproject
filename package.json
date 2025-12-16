@@ -12,7 +12,6 @@
     "vite": "^7.2.4"
   },
   "dependencies": {
-    "firebase": "^12.6.0",
-    "monaco-editor": "^0.45.0"
+    "firebase": "^12.6.0"
   }
 }

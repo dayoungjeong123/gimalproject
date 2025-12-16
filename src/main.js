@@ -4140,37 +4140,97 @@ const renderApp = () => {
 }
 
 // Firebase 인증 상태 감시 (student.html에서만 의미 있음)
-// signInWithPopup 사용 시 getRedirectResult는 필요 없음
-// 인증 상태 확인 시 약간의 지연을 두어 상태 동기화 대기
+// Netlify 환경에서 안정적인 인증 체크를 위한 로직
 let authCheckTimeout = null
 let hasCheckedAuth = false
+let authCheckAttempts = 0
+const MAX_AUTH_CHECK_ATTEMPTS = 5
+
+// 페이지 로드 시 이전 세션 스토리지 정리 (필요시)
+if (typeof window !== 'undefined' && window.location.pathname.includes('student')) {
+  // 페이지가 정상적으로 로드되면 플래그는 유지, 그렇지 않으면 정리
+  const authVerified = sessionStorage.getItem('auth_verified')
+  if (authVerified && !auth.currentUser) {
+    // 5초 후에도 인증 상태가 없으면 플래그 제거 (비정상 종료 대응)
+    setTimeout(() => {
+      if (!auth.currentUser) {
+        sessionStorage.removeItem('auth_verified')
+        sessionStorage.removeItem('auth_uid')
+      }
+    }, 5000)
+  }
+}
 
 onAuthStateChanged(auth, (user) => {
   firebaseUser = user
   
   // student.html 페이지에서만 인증 체크 수행
   if (window.location.pathname.includes('student')) {
-    // 첫 번째 인증 상태 확인 시 약간의 지연을 두어 상태 동기화 대기
+    // 세션 스토리지에서 인증 확인 플래그 확인 (리다이렉트 루프 방지)
+    const authVerified = sessionStorage.getItem('auth_verified')
+    const authUid = sessionStorage.getItem('auth_uid')
+    
+    // 첫 번째 인증 상태 확인 시
     if (!hasCheckedAuth) {
       hasCheckedAuth = true
-      // 약간의 지연 후 인증 상태 재확인 (popup 로그인 후 상태 동기화 대기)
+      authCheckAttempts = 0
+      
+      // 세션 스토리지에 플래그가 있으면 인증된 것으로 간주
+      if (authVerified === 'true' && (user || authUid)) {
+        console.log('세션 스토리지에서 인증 확인됨, 앱 렌더링')
+        renderApp()
+        return
+      }
+      
+      // 인증 상태 재확인 (Netlify 환경 대응: 더 긴 지연)
       if (authCheckTimeout) clearTimeout(authCheckTimeout)
       authCheckTimeout = setTimeout(() => {
-        // auth.currentUser를 직접 확인하여 더 안정적으로 체크
+        authCheckAttempts++
         const currentUser = auth.currentUser
-        if (!currentUser) {
-          console.log('인증되지 않은 사용자, 메인 페이지로 리다이렉트')
-          window.location.href = '/'
-        } else {
-          console.log('인증된 사용자 확인:', currentUser.email)
+        
+        // 세션 스토리지 플래그 재확인
+        const retryAuthVerified = sessionStorage.getItem('auth_verified')
+        
+        if (currentUser || retryAuthVerified === 'true') {
+          console.log('인증된 사용자 확인:', currentUser?.email || '세션 확인')
           renderApp()
+        } else if (authCheckAttempts < MAX_AUTH_CHECK_ATTEMPTS) {
+          // 재시도 (Netlify에서 인증 상태 동기화가 느릴 수 있음)
+          console.log(`인증 상태 확인 재시도 ${authCheckAttempts}/${MAX_AUTH_CHECK_ATTEMPTS}`)
+          authCheckTimeout = setTimeout(() => {
+            const retryUser = auth.currentUser
+            if (retryUser) {
+              console.log('재시도 후 인증 확인됨:', retryUser.email)
+              renderApp()
+            } else {
+              console.log('인증되지 않은 사용자, 메인 페이지로 리다이렉트')
+              sessionStorage.removeItem('auth_verified')
+              sessionStorage.removeItem('auth_uid')
+              window.location.href = '/'
+            }
+          }, 300)
+        } else {
+          // 최대 재시도 횟수 초과
+          console.log('인증 확인 실패, 메인 페이지로 리다이렉트')
+          sessionStorage.removeItem('auth_verified')
+          sessionStorage.removeItem('auth_uid')
+          window.location.href = '/'
         }
-      }, 100) // 100ms 지연으로 인증 상태 동기화 대기
+      }, 300) // Netlify 환경을 고려하여 300ms로 증가
     } else {
       // 이후 인증 상태 변화는 즉시 처리
       if (!user) {
-        console.log('로그아웃 감지, 메인 페이지로 리다이렉트')
-        window.location.href = '/'
+        // 세션 스토리지 플래그도 확인
+        if (authVerified !== 'true') {
+          console.log('로그아웃 감지, 메인 페이지로 리다이렉트')
+          sessionStorage.removeItem('auth_verified')
+          sessionStorage.removeItem('auth_uid')
+          window.location.href = '/'
+        } else {
+          // 세션 플래그가 있으면 유지 (일시적인 인증 상태 불일치 가능성)
+          console.log('인증 상태 불일치 가능성, 세션 플래그 유지')
+          renderApp()
+        }
       } else {
         renderApp()
       }

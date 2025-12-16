@@ -7,11 +7,66 @@
     <link rel="stylesheet" href="./src/style.css" />
   </head>
   <body>
-    <main class="simple-page">
-      <h1>교사용 모니터링 페이지</h1>
-      <p>이 페이지에서 학생들의 로그인 기록, 문제 풀이 상황, 프로젝트·성찰 제출 현황을 확인할 수 있게 만들 예정입니다.</p>
-      <p style="margin-top:1rem; font-size:0.9rem; color:#6b7280;">(다음 단계에서 Firebase 연동과 상세 화면을 구현할게요.)</p>
-      <p style="margin-top:2rem;"><a href="./index.html" class="btn secondary">← 메인으로 돌아가기</a></p>
-    </main>
+    <div class="teacher-layout">
+      <aside class="teacher-sidebar">
+        <h2 class="teacher-sidebar-title">필터</h2>
+
+        <section class="teacher-filter-section">
+          <h3>📅 날짜 선택</h3>
+          <div id="date-filter-list" class="teacher-filter-list">
+            <!-- JS에서 날짜 체크박스 렌더링 -->
+          </div>
+        </section>
+
+        <section class="teacher-filter-section">
+          <h3>🏫 반 선택</h3>
+          <div id="class-filter-list" class="teacher-filter-list">
+            <!-- JS에서 반 체크박스 렌더링 -->
+          </div>
+        </section>
+
+        <section class="teacher-filter-section">
+          <h3>👤 사용자 목록</h3>
+          <div id="user-filter-list" class="teacher-user-list">
+            <!-- JS에서 사용자 목록 렌더링 -->
+          </div>
+        </section>
+      </aside>
+
+      <main class="teacher-main">
+        <section class="teacher-data-list-section">
+          <h2 class="teacher-section-title">제출 데이터 목록</h2>
+          <div id="submission-list" class="teacher-submission-list">
+            <!-- JS에서 데이터 목록 렌더링 -->
+          </div>
+        </section>
+
+        <section class="teacher-panel project-panel">
+          <h2 class="teacher-section-title">📁 프로젝트 코드</h2>
+          <pre id="project-code-view" class="teacher-code-view">
+# 왼쪽 목록에서 학생 데이터를 선택하면
+# 이 영역에 제출한 .py 코드가 표시됩니다.
+          </pre>
+        </section>
+
+        <section class="teacher-panel reflection-panel">
+          <h2 class="teacher-section-title">📝 수업 성찰</h2>
+          <div id="reflection-view" class="teacher-text-view">
+            제출 데이터를 선택하면 이 영역에 수업 성찰 내용이 표시됩니다.
+          </div>
+        </section>
+
+        <section class="teacher-panel drawing-panel">
+          <h2 class="teacher-section-title">🎨 수업 후기 그림</h2>
+          <div id="drawing-view" class="teacher-drawing-view">
+            <div class="teacher-drawing-placeholder">
+              수업 후기 그림이 이 영역에 표시됩니다.
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script type="module" src="/src/admin.js"></script>
   </body>
 </html>

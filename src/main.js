@@ -106,30 +106,54 @@ let lastValidPythonCode = ''
 // Skulpt를 사용한 Python 문법 검사
 const checkPythonSyntax = (code) => {
   const sk = typeof window !== 'undefined' ? window.Sk : undefined
-  if (!sk) {
-    return { valid: false, error: '문법 검사 엔진이 아직 준비되지 않았습니다. 잠시 후 다시 실행해 보세요.' }
+
+  if (!code.trim()) {
+    return { valid: true, error: null, lineNum: null, type: null }
+  }
+
+  if (!sk || !sk.compile) {
+    return { valid: true, error: null, lineNum: null, type: null }
   }
 
   try {
-    sk.parse('<stdin>', code)
-    return { valid: true, error: null, lineNum: null }
-  } catch (error) {
-    let errorMsg = String(error)
-    let lineNum = null
+    const compiled = sk.compile(code, '<stdin>', 'exec', false)
+    return { valid: true, error: null, lineNum: null, type: null }
+  } catch (err) {
+    let errorMsg = String(err)
 
-    const lineMatch = errorMsg.match(/line (\d+)/)
-    if (lineMatch) {
-      lineNum = parseInt(lineMatch[1], 10)
+    // Skulpt 내부 버그로 인해 발생하는 특정 TypeError는
+    // 문법 오류가 아니라 엔진 문제이므로 통과 처리
+    if (errorMsg.includes('Object prototype may only be an Object or null')) {
+      console.warn('Skulpt 내부 오류로 문법 검사를 건너뜁니다:', err)
+      return { valid: true, error: null, lineNum: null, type: null }
+    }
+
+    let lineNum = null
+    let type = null
+
+    if (err.traceback) {
+      const tracebackStr = err.traceback.toString()
+      const lineMatch = tracebackStr.match(/line (\d+)/) || errorMsg.match(/line (\d+)/)
+      if (lineMatch) {
+        lineNum = parseInt(lineMatch[1], 10)
+      }
+      errorMsg = tracebackStr
+    } else {
+      const lineMatch = errorMsg.match(/line (\d+)/)
+      if (lineMatch) {
+        lineNum = parseInt(lineMatch[1], 10)
+      }
     }
 
     if (errorMsg.includes('SyntaxError')) {
-      errorMsg = errorMsg.replace(/SyntaxError: */g, '')
-    }
-    if (errorMsg.includes('IndentationError')) {
-      errorMsg = errorMsg.replace(/IndentationError: */g, '')
+      type = 'SyntaxError'
+    } else if (errorMsg.includes('IndentationError')) {
+      type = 'IndentationError'
+    } else if (errorMsg.includes('NameError')) {
+      type = 'NameError'
     }
 
-    return { valid: false, error: errorMsg, lineNum }
+    return { valid: false, error: errorMsg, lineNum, type }
   }
 }
 
@@ -5150,7 +5174,18 @@ if (runExperimentBtn) {
             if (syntaxCheck.lineNum) {
               msg = `줄 ${syntaxCheck.lineNum}: ${msg}`
             }
-            errorDisplay.textContent = msg
+
+            let hint = ''
+            const lower = msg.toLowerCase()
+            if (syntaxCheck.type === 'SyntaxError' || lower.includes('syntaxerror')) {
+              hint = '힌트: 콜론(:)이나 괄호가 빠지지 않았는지 확인해 보세요.'
+            } else if (syntaxCheck.type === 'IndentationError' || lower.includes('indentationerror')) {
+              hint = '힌트: 들여쓰기가 일정한지, 같은 블록의 줄들이 같은 칸수만큼 띄워졌는지 확인해 보세요.'
+            } else if (syntaxCheck.type === 'NameError' || lower.includes('nameerror')) {
+              hint = '힌트: 변수를 사용하기 전에 먼저 값을 넣어 주었는지(선언했는지) 확인해 보세요.'
+            }
+
+            errorDisplay.textContent = hint ? `${msg}\n${hint}` : msg
           }
           lastValidPythonCode = ''
           return
@@ -5179,7 +5214,18 @@ if (runExperimentBtn) {
             if (syntaxCheck.lineNum) {
               msg = `줄 ${syntaxCheck.lineNum}: ${msg}`
             }
-            errorDisplay.textContent = msg
+
+            let hint = ''
+            const lower = msg.toLowerCase()
+            if (syntaxCheck.type === 'SyntaxError' || lower.includes('syntaxerror')) {
+              hint = '힌트: 콜론(:)이나 괄호가 빠지지 않았는지 확인해 보세요.'
+            } else if (syntaxCheck.type === 'IndentationError' || lower.includes('indentationerror')) {
+              hint = '힌트: 들여쓰기가 일정한지, 같은 블록의 줄들이 같은 칸수만큼 띄워졌는지 확인해 보세요.'
+            } else if (syntaxCheck.type === 'NameError' || lower.includes('nameerror')) {
+              hint = '힌트: 변수를 사용하기 전에 먼저 값을 넣어 주었는지(선언했는지) 확인해 보세요.'
+            }
+
+            errorDisplay.textContent = hint ? `${msg}\n${hint}` : msg
           }
           lastValidPythonCode = ''
           return

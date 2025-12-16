@@ -4,6 +4,9 @@ import { signInWithPopup, onAuthStateChanged, signOut } from 'firebase/auth'
 const loginBtn = document.getElementById('google-login-btn')
 const userInfoEl = document.getElementById('google-user-info')
 const entryLinksEl = document.getElementById('entry-links')
+const teacherLinkEl = document.getElementById('teacher-link')
+
+const ADMIN_UID = 'AMu571T4XmRh7CWxIliZA0x0lkP2'
 
 const updateUIForUser = (user) => {
   if (!loginBtn || !userInfoEl || !entryLinksEl) return
@@ -17,12 +20,18 @@ const updateUIForUser = (user) => {
     userInfoEl.textContent = `${displayName}${email ? ' (' + email + ')' : ''}`
     userInfoEl.style.display = 'block'
     entryLinksEl.style.display = 'flex'
+    if (teacherLinkEl) {
+      teacherLinkEl.style.display = user.uid === ADMIN_UID ? 'inline-flex' : 'none'
+    }
   } else {
     // 로그아웃 상태
     loginBtn.textContent = 'Google 로그인'
     userInfoEl.textContent = ''
     userInfoEl.style.display = 'none'
     entryLinksEl.style.display = 'none'
+    if (teacherLinkEl) {
+      teacherLinkEl.style.display = 'none'
+    }
   }
 }
 

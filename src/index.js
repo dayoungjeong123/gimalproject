@@ -5,7 +5,6 @@ const loginBtn = document.getElementById('google-login-btn')
 const userInfoEl = document.getElementById('google-user-info')
 const entryLinksEl = document.getElementById('entry-links')
 const teacherLinkEl = document.getElementById('teacher-link')
-const studentLinkEl = document.getElementById('student-link')
 
 const ADMIN_UID = 'AMu571T4XmRh7CWxIliZA0x0lkP2'
 
@@ -61,12 +60,17 @@ onAuthStateChanged(auth, (user) => {
 // 초기 UI 상태
 updateUIForUser(auth.currentUser)
 
-// 학생으로 시작하기 버튼 클릭 이벤트
-if (studentLinkEl) {
-  studentLinkEl.addEventListener('click', (e) => {
-    console.log('학생으로 시작 버튼 클릭됨')
-    // 기본 링크 동작 사용 (Netlify 배포 환경 호환성)
-    // e.preventDefault() 제거하여 기본 동작 유지
-  })
-}
+// 학생으로 시작하기 링크 클릭 이벤트 (Netlify 배포 환경 대응)
+// DOM이 완전히 로드된 후 이벤트 리스너 추가
+setTimeout(() => {
+  const studentLink = document.getElementById('student-link')
+  if (studentLink) {
+    studentLink.addEventListener('click', (e) => {
+      console.log('학생으로 시작 버튼 클릭됨')
+      e.preventDefault()
+      // 명시적으로 페이지 이동 (Netlify 환경 대응)
+      window.location.href = '/student.html'
+    })
+  }
+}, 100)
 

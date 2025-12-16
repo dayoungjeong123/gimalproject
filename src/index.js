@@ -65,8 +65,8 @@ updateUIForUser(auth.currentUser)
 if (studentLinkEl) {
   studentLinkEl.addEventListener('click', (e) => {
     console.log('학생으로 시작 버튼 클릭됨')
-    e.preventDefault()
-    window.location.href = '/student.html'
+    // 기본 링크 동작 사용 (Netlify 배포 환경 호환성)
+    // e.preventDefault() 제거하여 기본 동작 유지
   })
 }
 

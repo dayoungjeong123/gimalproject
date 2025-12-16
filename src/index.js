@@ -35,12 +35,24 @@ const updateUIForUser = (user) => {
   }
 }
 
+// 리다이렉트 결과 처리 (로그인 후 돌아왔을 때)
+getRedirectResult(auth)
+  .then((result) => {
+    if (result) {
+      // 로그인 성공
+      console.log('Google 로그인 성공:', result.user)
+    }
+  })
+  .catch((err) => {
+    console.error('리다이렉트 결과 처리 오류:', err)
+  })
+
 if (loginBtn) {
   loginBtn.addEventListener('click', async () => {
     try {
       if (!auth.currentUser) {
-        // 로그인 시도
-        await signInWithPopup(auth, googleProvider)
+        // 로그인 시도 (리다이렉트 방식)
+        await signInWithRedirect(auth, googleProvider)
       } else {
         // 로그아웃
         await signOut(auth)

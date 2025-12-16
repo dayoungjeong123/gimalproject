@@ -1,4 +1,9 @@
 import './style.css'
+import { auth, db, storage } from './firebaseConfig'
+import { onAuthStateChanged, signOut } from 'firebase/auth'
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore'
+import { ref as storageRef, uploadString } from 'firebase/storage'
+import * as monaco from 'monaco-editor'
 
 // ============================================
 // 🎯 앱 상태 관리
@@ -32,6 +37,12 @@ let showFlowchart = false
 // 챗봇 상태
 let chatMessages = []
 let apiKeyStatus = 'checking' // checking, valid, invalid, empty
+
+// Firebase 로그인 사용자 (student.html에서 사용)
+let firebaseUser = null
+
+// Monaco Editor 인스턴스 (실행 흐름 페이지)
+let traceEditor = null
 
 // ============================================
 // 🔑 OpenAI API 키 (환경변수에서 가져오기)
@@ -89,6 +100,38 @@ const updateApiKeyStatusUI = () => {
 const starterCode = `# 🔄 for 반복문 예제
 for i in range(5):
     print(i)`
+
+let lastValidPythonCode = ''
+
+// Skulpt를 사용한 Python 문법 검사
+const checkPythonSyntax = (code) => {
+  const sk = typeof window !== 'undefined' ? window.Sk : undefined
+  if (!sk) {
+    return { valid: false, error: '문법 검사 엔진이 아직 준비되지 않았습니다. 잠시 후 다시 실행해 보세요.' }
+  }
+
+  try {
+    sk.parse('<stdin>', code)
+    return { valid: true, error: null, lineNum: null }
+  } catch (error) {
+    let errorMsg = String(error)
+    let lineNum = null
+
+    const lineMatch = errorMsg.match(/line (\d+)/)
+    if (lineMatch) {
+      lineNum = parseInt(lineMatch[1], 10)
+    }
+
+    if (errorMsg.includes('SyntaxError')) {
+      errorMsg = errorMsg.replace(/SyntaxError: */g, '')
+    }
+    if (errorMsg.includes('IndentationError')) {
+      errorMsg = errorMsg.replace(/IndentationError: */g, '')
+    }
+
+    return { valid: false, error: errorMsg, lineNum }
+  }
+}
 
 let pyodideReady = null
 let playbackTimer = null
@@ -431,6 +474,15 @@ const renderNavigation = () => {
           <span class="tab-text">성찰</span>
         </button>
       </div>
+      <div class="nav-right">
+        ${firebaseUser ? `
+          <div class="nav-user-info">
+            <span class="user-name">${firebaseUser.displayName || '학생'}</span>
+            ${firebaseUser.email ? `<span class="user-email">${firebaseUser.email}</span>` : ''}
+          </div>
+          <button class="btn mini ghost" id="student-logout-btn">로그아웃</button>
+        ` : ''}
+      </div>
     </nav>
   `
 }
@@ -446,7 +498,7 @@ const renderIntroPage = () => {
         <div class="intro-shape shape-4">🔁</div>
         <div class="intro-shape shape-5">✨</div>
         <div class="intro-shape shape-6">📚</div>
-      </div>
+            </div>
       
       <div class="intro-content">
         <div class="intro-logo">🐍</div>
@@ -1947,29 +1999,30 @@ const renderPythonPage = () => {
             <h3>✏️ 코드 입력</h3>
             <div class="btn-row">
               <button class="btn ghost small" id="btn-reset">📋 예제</button>
-              <button class="btn primary small" id="btn-step-start">👣 실행하기</button>
+              <button class="btn primary small" id="btn-run-check">▶ 실행하기</button>
+              <button class="btn primary small" id="btn-step-start">👣 실행 흐름 보기</button>
             </div>
           </div>
           
           <div class="code-editor-box">
-            <div class="code-with-lines">
-              ${(pythonCode || starterCode).split('\n').map((line, idx) => {
-                const lineNum = idx + 1
-                const isActive = currentStep?.lineNum === lineNum
-                const isExecuted = latestTrace.slice(0, pythonStepIndex + 1).some(t => t.lineNum === lineNum)
-                return `
-                  <div class="code-row ${isActive ? 'active' : ''} ${isExecuted && !isActive ? 'executed' : ''}">
-                    <span class="line-number">${lineNum}</span>
-                    <span class="line-code">${highlightPython(line) || ' '}</span>
-                  </div>
-                `
-              }).join('')}
-            </div>
+            ${!isStepMode ? `
+              <div id="code-editor" style="height: 400px;"></div>
+            ` : `
+              <div class="code-with-lines">
+                ${(pythonCode || starterCode).split('\\n').map((line, idx) => {
+                  const lineNum = idx + 1
+                  const isActive = currentStep?.lineNum === lineNum
+                  const isExecuted = latestTrace.slice(0, pythonStepIndex + 1).some(t => t.lineNum === lineNum)
+                  return `
+                    <div class="code-row ${isActive ? 'active' : ''} ${isExecuted && !isActive ? 'executed' : ''}">
+                      <span class="line-number">${lineNum}</span>
+                      <span class="line-code">${highlightPython(line) || ' '}</span>
+                    </div>
+                  `
+                }).join('')}
+              </div>
+            `}
           </div>
-          
-          ${!isStepMode ? `
-            <textarea id="code-input" class="code-textarea" spellcheck="false" placeholder="여기에 for 반복문 코드를 입력하세요...">${pythonCode || starterCode}</textarea>
-          ` : ''}
           
           ${isStepMode ? `
             <div class="step-controls">
@@ -1977,7 +2030,7 @@ const renderPythonPage = () => {
                 <div class="step-badge-big">${currentStep?.step || 0} / ${latestTrace.length}</div>
                 <div class="step-description">${currentStep?.description || '준비 완료'}</div>
                 ${currentStep?.iteration ? `<div class="iteration-badge">🔄 ${currentStep.iteration}번째 반복 중</div>` : ''}
-              </div>
+          </div>
               <div class="step-buttons">
                 <button class="btn ghost" id="btn-step-first" ${pythonStepIndex <= 0 ? 'disabled' : ''}>⏮️</button>
                 <button class="btn ghost" id="btn-step-prev" ${pythonStepIndex <= 0 ? 'disabled' : ''}>◀️</button>
@@ -1985,8 +2038,8 @@ const renderPythonPage = () => {
                   ${isFinished ? '✅ 완료!' : '다음 ▶️'}
                 </button>
                 <button class="btn danger" id="btn-step-exit">✕</button>
-              </div>
-            </div>
+        </div>
+          </div>
           ` : ''}
         </div>
         
@@ -1999,6 +2052,12 @@ const renderPythonPage = () => {
           
           <div class="trace-table-container">
             ${renderTraceTable()}
+        </div>
+          
+          <!-- 오류 메시지 -->
+          <div class="error-section" id="error-section" style="display: none;">
+            <h4>❌ 문법 오류</h4>
+            <div class="error-display" id="error-display"></div>
           </div>
           
           <!-- 출력 결과 -->
@@ -2008,7 +2067,7 @@ const renderPythonPage = () => {
               ${currentOutputs.length > 0 
                 ? currentOutputs.map(o => `<div class="output-line">${o}</div>`).join('') 
                 : '<span class="muted">아직 출력이 없어요</span>'}
-            </div>
+        </div>
           </div>
         </div>
       </section>
@@ -2696,6 +2755,10 @@ let projectRuleExplanation = ''
 let projectShowTrace = false // 실행 흐름 보기 모드
 let projectTrace = []
 let projectTraceIndex = 0
+// 프로젝트/성찰 시간 측정
+let projectStartTime = null
+let projectSubmitTime = null
+let reflectionStartTime = null
 
 // 프로젝트 실행 흐름 UI만 업데이트 (새로고침 없이)
 const updateProjectTraceUI = () => {
@@ -3042,6 +3105,13 @@ const renderProjectPage = () => {
           <div class="reflection-icon">💭</div>
           <p>이 프로젝트는 결과보다<br><strong>여러분이 만든 규칙과 설명</strong>이 더 중요합니다.</p>
         </div>
+
+        <div class="project-submit-bar">
+          <button class="btn primary" id="project-submit">
+            📤 프로젝트 제출하기
+          </button>
+          <p class="project-submit-hint">제출하기를 누르면 다음 단계인 <strong>수업 성찰</strong>로 이동합니다.</p>
+        </div>
       </div>
     </div>
   `
@@ -3068,38 +3138,62 @@ const renderChatbotPage = () => {
         <p class="header-desc">기말이에게 오늘 수업 후기를 들려주세요! ✨</p>
       </div>
       
-      <div class="chat-container">
-        <div class="chat-messages" id="chat-messages">
-          ${chatMessages.length === 0 ? `
-            <div class="chat-welcome">
-              <div class="welcome-avatar">🤖</div>
-              <div class="welcome-text">
-                <h3>안녕! 나는 기말이야! 👋</h3>
-                <p>오늘 코딩 수업은 어땠어? 재미있었던 점이나 어려웠던 점을 편하게 이야기해줘!</p>
+      <div class="chat-and-draw-layout">
+        <div class="chat-container">
+          <div class="chat-messages" id="chat-messages">
+            ${chatMessages.length === 0 ? `
+              <div class="chat-welcome">
+                <div class="welcome-avatar">🤖</div>
+                <div class="welcome-text">
+                  <h3>안녕! 나는 기말이야! 👋</h3>
+                  <p>오늘 코딩 수업은 어땠어? 재미있었던 점이나 어려웠던 점을 편하게 이야기해줘!</p>
+                </div>
               </div>
+            ` : messagesHTML}
+          </div>
+          
+          <div class="chat-input-area">
+            <div class="chat-input-wrap">
+              <textarea id="chat-input" placeholder="여기에 후기를 입력해주세요..." rows="2"></textarea>
+              <button class="btn primary send-btn" id="send-chat">
+                <span>보내기</span>
+                <span>📤</span>
+              </button>
             </div>
-          ` : messagesHTML}
-        </div>
-        
-        <div class="chat-input-area">
-          <div class="chat-input-wrap">
-            <textarea id="chat-input" placeholder="여기에 후기를 입력해주세요..." rows="2"></textarea>
-            <button class="btn primary send-btn" id="send-chat">
-              <span>보내기</span>
-              <span>📤</span>
-            </button>
+          </div>
+          
+          <div class="chat-quick-replies">
+            <p>💬 이렇게 대답해볼 수 있어요:</p>
+            <div class="quick-reply-chips">
+              <button class="quick-chip" data-msg="오늘 수업 정말 재미있었어요!">😊 재미있었어요!</button>
+              <button class="quick-chip" data-msg="오늘 배운 내용이 조금 어려웠어요">🤔 좀 어려웠어요</button>
+              <button class="quick-chip" data-msg="다음에 게임 만들기 배우고 싶어요!">🎮 게임 만들고 싶어요</button>
+              <button class="quick-chip" data-msg="선생님 설명이 이해하기 쉬웠어요">👍 설명이 좋았어요</button>
+            </div>
           </div>
         </div>
-        
-        <div class="chat-quick-replies">
-          <p>💬 이렇게 대답해볼 수 있어요:</p>
-          <div class="quick-reply-chips">
-            <button class="quick-chip" data-msg="오늘 수업 정말 재미있었어요!">😊 재미있었어요!</button>
-            <button class="quick-chip" data-msg="오늘 배운 내용이 조금 어려웠어요">🤔 좀 어려웠어요</button>
-            <button class="quick-chip" data-msg="다음에 게임 만들기 배우고 싶어요!">🎮 게임 만들고 싶어요</button>
-            <button class="quick-chip" data-msg="선생님 설명이 이해하기 쉬웠어요">👍 설명이 좋았어요</button>
+
+        <div class="draw-container">
+          <h2>🖍️ 오늘 수업을 그림으로 표현하기</h2>
+          <p class="draw-desc">반복문 수업에서 떠오르는 장면이나 느낌을 자유롭게 그려보세요.</p>
+          <div class="draw-toolbar">
+            <label>색상
+              <input type="color" id="draw-color" value="#2563eb" />
+            </label>
+            <label>굵기
+              <input type="range" id="draw-size" min="2" max="12" value="4" />
+            </label>
+            <button class="btn ghost" id="draw-clear">지우기</button>
+          </div>
+          <div class="draw-canvas-wrap">
+            <canvas id="reflection-canvas" width="400" height="260"></canvas>
           </div>
         </div>
+      </div>
+
+      <div class="chat-submit-bar">
+        <button class="btn primary" id="submit-reflection">제출하기</button>
+        <p class="chat-submit-hint">※ 제출하기를 누르면, 대화 내용과 그림이 나중에 Firebase로 저장될 예정입니다.</p>
       </div>
     </div>
   `
@@ -3594,7 +3688,7 @@ const renderApp = () => {
       ${renderNavigation()}
       <main class="main-content">
         ${pageContent}
-      </main>
+    </main>
       ${renderMiniEditor()}
     </div>
   `
@@ -3602,6 +3696,17 @@ const renderApp = () => {
   attachEvents()
   updateApiKeyStatusUI()
 }
+
+// Firebase 인증 상태 감시 (student.html에서만 의미 있음)
+onAuthStateChanged(auth, (user) => {
+  firebaseUser = user
+  // student.html에서 로그인이 안 되어 있으면 메인으로 돌려보내기
+  if (!user && window.location.pathname.includes('student')) {
+    window.location.href = '/'
+  } else {
+    renderApp()
+  }
+})
 
 const attachIntroEvents = () => {
   // 기존 시작 버튼은 사용하지 않음 (학생 정보 입력 카드에서 바로 시작)
@@ -3897,6 +4002,18 @@ const attachEvents = () => {
       }
     })
   })
+
+  // 상단 학생 로그아웃 버튼 (student.html용)
+  const studentLogoutBtn = document.querySelector('#student-logout-btn')
+  if (studentLogoutBtn) {
+    studentLogoutBtn.addEventListener('click', async () => {
+      try {
+        await signOut(auth)
+      } finally {
+        window.location.href = '/'
+      }
+    })
+  }
   
   // 성찰 페이지 이벤트
   if (currentPage === 'reflection') {
@@ -4954,43 +5071,143 @@ if (runExperimentBtn) {
         renderApp()
       })
     }
+
+    // 프로젝트 제출 버튼 → 수업 성찰 페이지로 이동
+    const projectSubmitBtn = document.querySelector('#project-submit')
+    if (projectSubmitBtn) {
+      projectSubmitBtn.addEventListener('click', () => {
+        const codeEl = document.querySelector('#project-code')
+        const ruleEl = document.querySelector('#rule-explanation')
+        if (codeEl) projectCode = codeEl.value
+        if (ruleEl) projectRuleExplanation = ruleEl.value
+
+        // 나중에 교사용 모니터링에서 활용할 수 있도록 상태만 보존하고 페이지 이동
+        currentPage = 'reflection'
+        renderApp()
+      })
+    }
   }
 
   // 실행 흐름 페이지 (Fake Interpreter 방식)
   if (currentPage === 'trace') {
     const resetBtn = document.querySelector('#btn-reset')
+    const runCheckBtn = document.querySelector('#btn-run-check')
     const stepStartBtn = document.querySelector('#btn-step-start')
-    const input = document.querySelector('#code-input')
+    const editorHost = document.querySelector('#code-editor')
+
+    // Monaco Editor 초기화 (한 번만)
+    if (editorHost && !traceEditor) {
+      traceEditor = monaco.editor.create(editorHost, {
+        value: pythonCode || starterCode,
+        language: 'python',
+        theme: 'vs',
+        fontSize: 16,
+        fontFamily: 'Consolas, Monaco, monospace',
+        automaticLayout: true,
+        minimap: { enabled: false },
+        scrollBeyondLastLine: false,
+        tabSize: 4,
+        insertSpaces: true,
+        wordWrap: 'on'
+      })
+    }
 
     // 예제 불러오기
     if (resetBtn) {
       resetBtn.addEventListener('click', () => {
-        pythonCode = `# 🔄 for 반복문 예제
-for i in range(5):
-    print(i)`
+        pythonCode = starterCode
         pythonStepMode = false
         pythonStepIndex = -1
         latestTrace = []
-        renderApp()
+        lastValidPythonCode = ''
+        if (traceEditor) {
+          traceEditor.setValue(pythonCode)
+        }
+        const errorSection = document.querySelector('#error-section')
+        const errorDisplay = document.querySelector('#error-display')
+        if (errorSection) errorSection.style.display = 'none'
+        if (errorDisplay) errorDisplay.textContent = ''
       })
     }
 
-    // 실행하기 (Fake Interpreter 사용)
+    // [실행하기] 문법 검사만 수행
+    if (runCheckBtn) {
+      runCheckBtn.addEventListener('click', () => {
+        const code = traceEditor ? traceEditor.getValue() : (pythonCode || starterCode)
+        pythonCode = code
+
+        const errorSection = document.querySelector('#error-section')
+        const errorDisplay = document.querySelector('#error-display')
+        if (errorSection) errorSection.style.display = 'none'
+        if (errorDisplay) errorDisplay.textContent = ''
+
+        const syntaxCheck = checkPythonSyntax(code)
+
+        if (!syntaxCheck.valid) {
+          if (errorSection) errorSection.style.display = 'block'
+          if (errorDisplay) {
+            let msg = syntaxCheck.error || '문법 오류가 발생했습니다.'
+            if (syntaxCheck.lineNum) {
+              msg = `줄 ${syntaxCheck.lineNum}: ${msg}`
+            }
+            errorDisplay.textContent = msg
+          }
+          lastValidPythonCode = ''
+          return
+        }
+
+        lastValidPythonCode = code
+      })
+    }
+
+    // [실행 흐름 보기] 문법 검사 + trace 실행
     if (stepStartBtn) {
       stepStartBtn.addEventListener('click', () => {
-        const code = input?.value || pythonCode || starterCode
+        const code = traceEditor ? traceEditor.getValue() : (pythonCode || starterCode)
         pythonCode = code
-        
-        // Fake Interpreter로 실행 단계 생성
+
+        const errorSection = document.querySelector('#error-section')
+        const errorDisplay = document.querySelector('#error-display')
+        if (errorSection) errorSection.style.display = 'none'
+        if (errorDisplay) errorDisplay.textContent = ''
+
+        const syntaxCheck = checkPythonSyntax(code)
+        if (!syntaxCheck.valid) {
+          if (errorSection) errorSection.style.display = 'block'
+          if (errorDisplay) {
+            let msg = syntaxCheck.error || '문법 오류가 발생했습니다.'
+            if (syntaxCheck.lineNum) {
+              msg = `줄 ${syntaxCheck.lineNum}: ${msg}`
+            }
+            errorDisplay.textContent = msg
+          }
+          lastValidPythonCode = ''
+          return
+        }
+
+        lastValidPythonCode = code
+
         const result = fakeInterpreter(code)
-        
+
         if (result.trace.length > 0) {
+          const hasLoop = result.trace.some(t => t.type === 'for-start' || t.type === 'while-start')
+          if (!hasLoop) {
+            if (errorSection) errorSection.style.display = 'block'
+            if (errorDisplay) {
+              errorDisplay.textContent = '반복문(for 또는 while)이 포함된 코드를 입력해주세요.'
+            }
+            return
+          }
+
           latestTrace = result.trace
           pythonStepMode = true
           pythonStepIndex = 0
           renderApp()
         } else {
-          alert('⚠️ 실행할 for 반복문이 없어요!\n\nfor i in range(5):\n    print(i)\n\n형태로 입력해주세요.')
+          if (errorSection) errorSection.style.display = 'block'
+          if (errorDisplay) {
+            errorDisplay.textContent = '실행할 반복문이 없어요. for 또는 while문을 포함해주세요.'
+          }
         }
       })
     }
@@ -5213,6 +5430,176 @@ for i in range(5):
       
       input.addEventListener('input', () => {
         pythonCode = input.value
+      })
+    }
+  }
+
+  // 수업 후기 / 챗봇 + 그림 페이지 이벤트
+  if (currentPage === 'reflection') {
+    const sendChatBtn = document.querySelector('#send-chat')
+    const chatInput = document.querySelector('#chat-input')
+
+    const sendMessage = async () => {
+      const message = chatInput.value.trim()
+      if (!message) return
+
+      chatMessages.push({ role: 'user', content: message })
+      chatInput.value = ''
+      renderApp()
+
+      const messagesDiv = document.querySelector('#chat-messages')
+      if (messagesDiv) messagesDiv.scrollTop = messagesDiv.scrollHeight
+
+      // 로딩 표시
+      const loadingMsg = document.createElement('div')
+      loadingMsg.className = 'chat-message assistant loading'
+      loadingMsg.innerHTML = `
+        <div class="message-avatar">🤖</div>
+        <div class="message-content">
+          <div class="message-bubble">생각 중... 💭</div>
+        </div>
+      `
+      messagesDiv?.appendChild(loadingMsg)
+
+      const response = await sendToChatGPT(message)
+      chatMessages.push({ role: 'assistant', content: response })
+      renderApp()
+
+      const newMessagesDiv = document.querySelector('#chat-messages')
+      if (newMessagesDiv) newMessagesDiv.scrollTop = newMessagesDiv.scrollHeight
+    }
+
+    if (sendChatBtn && chatInput) {
+      sendChatBtn.addEventListener('click', sendMessage)
+      chatInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault()
+          sendMessage()
+        }
+      })
+    }
+
+    // 빠른 답변 칩
+    const quickChips = document.querySelectorAll('.quick-chip')
+    quickChips.forEach(chip => {
+      chip.addEventListener('click', () => {
+        const msg = chip.dataset.msg
+        if (chatInput) {
+          chatInput.value = msg
+          chatInput.focus()
+        }
+      })
+    })
+
+    // 그림 그리기 캔버스
+    const canvas = document.querySelector('#reflection-canvas')
+    const colorInput = document.querySelector('#draw-color')
+    const sizeInput = document.querySelector('#draw-size')
+    const clearBtn = document.querySelector('#draw-clear')
+
+    if (canvas && canvas.getContext) {
+      const ctx = canvas.getContext('2d')
+      let drawing = false
+      let lastX = 0
+      let lastY = 0
+
+      const getPos = (e) => {
+        const rect = canvas.getBoundingClientRect()
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY
+        return {
+          x: clientX - rect.left,
+          y: clientY - rect.top
+        }
+      }
+
+      const startDraw = (e) => {
+        drawing = true
+        const pos = getPos(e)
+        lastX = pos.x
+        lastY = pos.y
+      }
+
+      const draw = (e) => {
+        if (!drawing) return
+        e.preventDefault()
+        const pos = getPos(e)
+        ctx.strokeStyle = colorInput?.value || '#2563eb'
+        ctx.lineWidth = sizeInput ? Number(sizeInput.value) : 4
+        ctx.lineCap = 'round'
+        ctx.lineJoin = 'round'
+
+        ctx.beginPath()
+        ctx.moveTo(lastX, lastY)
+        ctx.lineTo(pos.x, pos.y)
+        ctx.stroke()
+
+        lastX = pos.x
+        lastY = pos.y
+      }
+
+      const endDraw = () => {
+        drawing = false
+      }
+
+      canvas.addEventListener('mousedown', startDraw)
+      canvas.addEventListener('mousemove', draw)
+      canvas.addEventListener('mouseup', endDraw)
+      canvas.addEventListener('mouseleave', endDraw)
+
+      canvas.addEventListener('touchstart', startDraw, { passive: false })
+      canvas.addEventListener('touchmove', draw, { passive: false })
+      canvas.addEventListener('touchend', endDraw)
+
+      if (clearBtn) {
+        clearBtn.addEventListener('click', () => {
+          ctx.clearRect(0, 0, canvas.width, canvas.height)
+        })
+      }
+    }
+
+    // 제출하기 버튼 (나중에 Firebase 전송 예정)
+    const submitBtn = document.querySelector('#submit-reflection')
+    if (submitBtn) {
+      submitBtn.addEventListener('click', async () => {
+        try {
+          const user = firebaseUser
+          const now = Date.now()
+          const projectElapsedMs = projectStartTime && projectSubmitTime ? (projectSubmitTime - projectStartTime) : null
+          const reflectionElapsedMs = reflectionStartTime ? (now - reflectionStartTime) : null
+
+          // 프로젝트 코드 Storage에 업로드
+          let projectPath = null
+          if (projectCode && user) {
+            const safeLevel = projectLevel || 'unknown'
+            const fileName = `project_${safeLevel}_${now}.py`
+            const path = `studentProjects/${user.uid}/${fileName}`
+            const ref = storageRef(storage, path)
+            await uploadString(ref, projectCode, 'raw', { contentType: 'text/x-python' })
+            projectPath = path
+          }
+
+          // Firestore에 성찰 데이터 저장
+          if (db) {
+            await addDoc(collection(db, 'reflections'), {
+              studentClass: studentInfo.klass || null,
+              studentNumber: studentInfo.number || null,
+              studentName: studentInfo.name || (firebaseUser?.displayName ?? null),
+              email: firebaseUser?.email ?? null,
+              projectLevel: projectLevel,
+              projectElapsedMs,
+              reflectionElapsedMs,
+              chatMessages,
+              projectCodePath: projectPath,
+              createdAt: serverTimestamp()
+            })
+          }
+
+          alert('제출이 완료되었습니다! (Firebase에 저장되었습니다.)')
+        } catch (err) {
+          console.error('성찰 제출 중 오류:', err)
+          alert('제출 중 오류가 발생했어요. 잠시 후 다시 시도해 주세요.')
+        }
       })
     }
   }

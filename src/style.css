@@ -132,6 +132,29 @@ body {
   flex-wrap: wrap;
 }
 
+.nav-right {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.nav-user-info {
+  display: flex;
+  flex-direction: column;
+  font-size: 0.8rem;
+  color: var(--text-medium);
+  text-align: right;
+}
+
+.nav-user-info .user-name {
+  font-weight: 600;
+  color: var(--text-dark);
+}
+
+.nav-user-info .user-email {
+  font-size: 0.75rem;
+}
+
 /* API 키 상태 표시 */
 .api-status {
   display: inline-flex;
@@ -4361,6 +4384,20 @@ body {
   line-height: 1.6;
 }
 
+.project-submit-bar {
+  margin-top: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  align-items: flex-start;
+}
+
+.project-submit-bar .project-submit-hint {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--text-medium);
+}
+
 /* 프로젝트 실행 흐름 섹션 */
 .project-trace-section {
   background: white;
@@ -4650,6 +4687,30 @@ body {
   margin-bottom: 1rem;
 }
 
+.cm-wrapper {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 0.9rem;
+}
+
+.cm-wrapper .cm-editor {
+  background: transparent;
+  color: #e5e7eb;
+}
+
+.cm-wrapper .cm-scroller {
+  max-height: 260px;
+  overflow: auto;
+  padding: 0.5rem 0.25rem 0.5rem 0.5rem;
+}
+
+.cm-wrapper .cm-content {
+  caret-color: #facc15;
+}
+
+.cm-wrapper .cm-lineNumbers .cm-gutterElement {
+  color: #6b7280;
+}
+
 .code-with-lines {
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
   font-size: 0.9rem;
@@ -4918,6 +4979,33 @@ body {
 }
 
 /* 출력 섹션 */
+.error-section {
+  margin-top: 20px;
+  padding: 16px;
+  background: #FFF0F0;
+  border: 2px solid #FF6B6B;
+  border-radius: 12px;
+}
+
+.error-section h4 {
+  margin: 0 0 12px 0;
+  color: #D32F2F;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.error-display {
+  padding: 12px;
+  background: #FFFFFF;
+  border-radius: 8px;
+  color: #D32F2F;
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 14px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .output-section {
   background: #1e1e2e;
   border-radius: 15px;

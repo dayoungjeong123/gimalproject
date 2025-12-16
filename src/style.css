@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700;800&family=Do+Hyeon&display=swap');
 
 :root {
   /* 🎨 귀여운 파스텔 색상 팔레트 */
@@ -178,7 +178,25 @@ body {
 }
 
 .logo-text {
-  font-size: 1.4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.logo-main {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-dark);
+}
+
+.logo-sub {
+  font-size: 0.7rem;
+  font-weight: 400;
+  color: var(--text-medium);
+}
+
+.logo-highlight {
+  font-size: 1.3rem;
   font-weight: 800;
   background: linear-gradient(135deg, var(--pink-accent), var(--purple-accent), var(--blue-accent));
   -webkit-background-clip: text;
@@ -3347,6 +3365,27 @@ body {
   color: var(--purple-accent);
 }
 
+/* 퀴즈 점수 요약 */
+.quiz-summary {
+  margin-top: 1.25rem;
+  padding: 0.9rem 1rem;
+  border-radius: 12px;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+}
+
+.quiz-summary #quiz-score-text {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-dark);
+  margin-bottom: 0.35rem;
+}
+
+.quiz-summary #quiz-score-message {
+  font-size: 0.85rem;
+  color: var(--text-medium);
+}
+
 .quiz-options {
   display: flex;
   flex-direction: column;
@@ -5944,7 +5983,8 @@ textarea:focus {
   border-radius: 30px;
   box-shadow: 0 20px 60px rgba(100, 80, 150, 0.25);
   border: 3px solid var(--mint-medium);
-  overflow: hidden;
+  overflow: auto;
+  resize: both;
   animation: mini-editor-open 0.3s ease;
 }
 
@@ -5995,28 +6035,33 @@ textarea:focus {
 .resize-nw {
   top: 0;
   left: 0;
-  width: 16px;
-  height: 16px;
+  width: 10px;
+  height: 10px;
   cursor: nw-resize;
-  border-radius: 8px 0 0 0;
 }
 
-.resize-nw::after {
-  content: '';
-  position: absolute;
-  top: 4px;
-  left: 4px;
-  width: 8px;
-  height: 8px;
-  border-top: 2px solid rgba(124, 58, 237, 0.4);
-  border-left: 2px solid rgba(124, 58, 237, 0.4);
-  border-radius: 2px 0 0 0;
-  opacity: 0;
-  transition: opacity 0.2s;
+.resize-ne {
+  top: 0;
+  right: 0;
+  width: 10px;
+  height: 10px;
+  cursor: ne-resize;
 }
 
-.mini-editor:hover .resize-nw::after {
-  opacity: 1;
+.resize-se {
+  bottom: 0;
+  right: 0;
+  width: 10px;
+  height: 10px;
+  cursor: se-resize;
+}
+
+.resize-sw {
+  bottom: 0;
+  left: 0;
+  width: 10px;
+  height: 10px;
+  cursor: sw-resize;
 }
 
 /* 미니 에디터 헤더 */
@@ -7073,13 +7118,11 @@ textarea:focus {
 }
 
 .intro-title {
-  font-size: 2.5rem;
-  font-weight: 800;
+  font-size: 2rem;
+  font-weight: 700;
   margin: 0;
-  background: linear-gradient(135deg, var(--pink-accent), var(--purple-accent), var(--blue-accent));
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  color: var(--text-dark);
+  font-family: 'Do Hyeon', 'Noto Sans KR', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
 .intro-subtitle {
@@ -7088,62 +7131,146 @@ textarea:focus {
   margin: 0.5rem 0 2rem;
 }
 
-/* 학습 흐름 */
-.intro-learning-path {
-  background: rgba(255, 255, 255, 0.15);
-  backdrop-filter: blur(10px);
-  border-radius: 20px;
-  padding: 1.5rem 2rem;
+/* 학습 목표 박스 */
+.intro-objectives {
+  background: var(--bg-card);
+  border-radius: 24px;
+  padding: 1.25rem 1.5rem;
   margin-bottom: 2rem;
+  max-width: 800px;
+  margin-left: auto;
+  margin-right: auto;
+  box-shadow: var(--shadow-card);
+  border: 2px solid var(--purple-light);
+  text-align: left;
 }
 
-.path-title {
-  font-size: 0.9rem;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.8);
-  margin-bottom: 1rem;
-  text-align: center;
-}
-
-.path-steps {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-}
-
-.path-step {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  background: rgba(255, 255, 255, 0.2);
-  padding: 0.5rem 1rem;
-  border-radius: 25px;
-}
-
-.step-num {
-  width: 24px;
-  height: 24px;
-  background: white;
-  color: var(--purple-accent);
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.objectives-title {
+  font-size: 1.1rem;
   font-weight: 700;
-  font-size: 0.85rem;
+  color: var(--text-dark);
+  margin-bottom: 0.75rem;
+  text-align: left;
 }
 
-.step-text {
-  color: white;
+.objectives-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.objective-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  background: #f9fafb;
+  padding: 0.7rem 0.9rem;
+  border-radius: 10px;
+  border: 1px solid #e5e7eb;
+  transition: all 0.25s ease;
+}
+
+.objective-item:hover {
+  background: #ffffff;
+  transform: none;
+  box-shadow: 0 3px 8px rgba(148, 163, 184, 0.25);
+}
+
+.objective-icon {
+  font-size: 1.2rem;
+  flex-shrink: 0;
+}
+
+.objective-content {
+  flex: 1;
+  text-align: left;
+}
+
+.objective-content h3 {
+  margin: 0 0 0.3rem;
   font-size: 0.9rem;
-  font-weight: 500;
+  font-weight: 700;
+  color: var(--text-dark);
+  letter-spacing: -0.03em;
 }
 
-.path-arrow {
-  color: rgba(255, 255, 255, 0.5);
+.objective-content p {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--text-medium);
+  line-height: 1.6;
+  letter-spacing: -0.02em;
+}
+
+/* 시작 화면 학생 정보 카드 */
+.student-info-card {
+  margin-top: 1rem;
+  background: #f9fafb;
+  border-radius: 16px;
+  padding: 1.2rem 1.4rem;
+  border: 1px solid #e5e7eb;
+  box-shadow: 0 6px 16px rgba(148, 163, 184, 0.25);
+}
+
+.student-info-card h3 {
+  margin: 0 0 0.4rem;
   font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-dark);
+}
+
+.student-info-desc {
+  margin: 0 0 0.8rem;
+  font-size: 0.82rem;
+  color: var(--text-medium);
+}
+
+.student-info-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.7rem;
+  margin-bottom: 0.9rem;
+}
+
+.student-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.student-field.full {
+  grid-column: 1 / -1;
+}
+
+.student-field label {
+  font-size: 0.78rem;
+  color: var(--text-medium);
+}
+
+.student-field input {
+  padding: 0.35rem 0.5rem;
+  border-radius: 8px;
+  border: 1px solid #d1d5db;
+  font-size: 0.85rem;
+  font-family: inherit;
+}
+
+.student-field input:focus {
+  outline: none;
+  border-color: var(--purple-accent);
+  box-shadow: 0 0 0 2px rgba(184, 140, 255, 0.25);
+}
+
+.student-info-card .start-learning-btn {
+  width: 100%;
+  justify-content: center;
+  font-size: 0.9rem;
+}
+
+@media (max-width: 640px) {
+  .student-info-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 .intro-features {
@@ -7369,6 +7496,75 @@ textarea:focus {
   border-radius: 25px;
   padding: 1rem 1.25rem;
   border: 2px solid var(--yellow-medium);
+}
+
+/* ============================================
+   🏠 메인 랜딩 페이지 (심플 버전)
+   ============================================ */
+.landing-root.simple-landing {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 1rem;
+}
+
+.landing-main {
+  width: 100%;
+  max-width: 640px;
+}
+
+.landing-center-card {
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 24px;
+  padding: 2.5rem 2rem;
+  box-shadow: 0 18px 45px rgba(148, 163, 184, 0.35);
+  text-align: center;
+}
+
+.landing-title-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1.75rem;
+}
+
+.landing-title-group .logo-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.25rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #1f2933;
+  background: linear-gradient(135deg, var(--mint-light), var(--blue-light));
+  border: 1px solid var(--mint-medium);
+}
+
+.landing-title {
+  margin: 0;
+  font-size: 1.6rem;
+  font-weight: 800;
+  color: var(--text-dark);
+}
+
+.landing-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.landing-buttons .btn {
+  justify-content: center;
+  font-size: 0.95rem;
+}
+
+@media (min-width: 640px) {
+  .landing-buttons {
+    flex-direction: row;
+  }
 }
 
 .chat-quick-replies p {

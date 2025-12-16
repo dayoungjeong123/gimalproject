@@ -11,6 +11,14 @@ let miniEditorCode = `# 🔄 반복문 예제
 for i in range(5):
     print(i)`
 
+// 시작 화면 학생 정보
+let introFormVisible = false
+let studentInfo = {
+  klass: '',
+  number: '',
+  name: ''
+}
+
 // 미니 에디터 스텝 모드 상태
 let miniStepMode = false
 let miniStepTrace = []
@@ -394,7 +402,11 @@ const renderNavigation = () => {
       <div class="nav-left">
         <div class="nav-logo" id="go-home" style="cursor: pointer;">
           <span class="logo-icon">🐍</span>
-          <span class="logo-text">반복문 학습</span>
+          <span class="logo-text">
+            <span class="logo-main">다영쌤과 함께 하는 정보수업</span>
+            <span class="logo-sub">Ⅲ 프로그래밍 · 4. 제어 구조 - 반복문</span>
+            <span class="logo-highlight">반복문 수업</span>
+          </span>
         </div>
       </div>
       <div class="nav-tabs">
@@ -438,37 +450,64 @@ const renderIntroPage = () => {
       
       <div class="intro-content">
         <div class="intro-logo">🐍</div>
-        <h1 class="intro-title">Python 반복문 학습</h1>
-        <p class="intro-subtitle">for문과 while문을 완벽하게 이해해보자!</p>
+        <h1 class="intro-title">다영쌤과 함께하는 정보 수업</h1>
+        <p class="intro-subtitle">Ⅲ 프로그래밍 · 4. 제어 구조 - 반복문</p>
         
-        <div class="intro-learning-path">
-          <div class="path-title">📍 학습 흐름</div>
-          <div class="path-steps">
-            <div class="path-step">
-              <span class="step-num">1</span>
-              <span class="step-text">개념 이해</span>
+        <div class="intro-objectives">
+          <div class="objectives-title">🎯 학습 목표</div>
+          <div class="objectives-list">
+            <div class="objective-item">
+              <span class="objective-icon">1</span>
+              <div class="objective-content">
+                <h3>반복문의 개념 이해</h3>
+                <p>for문과 while문의 차이점과 사용 시기를 구분할 수 있다</p>
+              </div>
             </div>
-            <div class="path-arrow">→</div>
-            <div class="path-step">
-              <span class="step-num">2</span>
-              <span class="step-text">실행 흐름</span>
+            <div class="objective-item">
+              <span class="objective-icon">2</span>
+              <div class="objective-content">
+                <h3>코드 실행 흐름 파악</h3>
+                <p>반복문이 실행되는 과정을 단계별로 추적하고 이해할 수 있다</p>
+              </div>
             </div>
-            <div class="path-arrow">→</div>
-            <div class="path-step">
-              <span class="step-num">3</span>
-              <span class="step-text">문제 풀이</span>
+            <div class="objective-item">
+              <span class="objective-icon">3</span>
+              <div class="objective-content">
+                <h3>실전 문제 해결</h3>
+                <p>다양한 난이도의 문제를 반복문으로 해결할 수 있다</p>
+              </div>
             </div>
-            <div class="path-arrow">→</div>
-            <div class="path-step">
-              <span class="step-num">4</span>
-              <span class="step-text">프로젝트</span>
-            </div>
-            <div class="path-arrow">→</div>
-            <div class="path-step">
-              <span class="step-num">5</span>
-              <span class="step-text">성찰</span>
+            <div class="objective-item">
+              <span class="objective-icon">4</span>
+              <div class="objective-content">
+                <h3>프로젝트 적용</h3>
+                <p>실제 프로젝트에서 반복문을 활용하여 프로그램을 작성할 수 있다</p>
+              </div>
             </div>
           </div>
+        </div>
+        
+        <div class="student-info-card">
+          <h3>📝 수업 전 내 정보 입력하기</h3>
+          <p class="student-info-desc">출석과 학습 기록을 위해 아래 정보를 간단히 적어주세요.</p>
+          <div class="student-info-grid">
+            <div class="student-field">
+              <label for="student-class">반</label>
+              <input id="student-class" type="text" placeholder="예: 1-3" value="${studentInfo.klass}">
+            </div>
+            <div class="student-field">
+              <label for="student-number">번호</label>
+              <input id="student-number" type="text" placeholder="예: 12" value="${studentInfo.number}">
+            </div>
+            <div class="student-field full">
+              <label for="student-name">이름</label>
+              <input id="student-name" type="text" placeholder="예: 김코딩" value="${studentInfo.name}">
+            </div>
+          </div>
+          <button class="intro-btn start-learning-btn" id="student-start-btn">
+            <span>반복문 수업 시작하기</span>
+            <span class="btn-arrow">→</span>
+          </button>
         </div>
         
         <div class="intro-features">
@@ -485,11 +524,6 @@ const renderIntroPage = () => {
             <span>수업 성찰</span>
           </div>
         </div>
-        
-        <button class="intro-btn" id="start-btn">
-          <span>학습 시작하기</span>
-          <span class="btn-arrow">→</span>
-        </button>
       </div>
     </div>
   `
@@ -1549,6 +1583,11 @@ const renderStep6Quiz = () => `
         </div>
         <div class="quiz-feedback" id="feedback-3"></div>
       </div>
+    </div>
+
+    <div class="quiz-summary">
+      <div id="quiz-score-text">지금까지 맞힌 개수: 0 / 3</div>
+      <div id="quiz-score-message">문제를 풀면서 개념을 정리해 보세요.</div>
     </div>
   </div>
 `
@@ -3496,6 +3535,15 @@ const renderMiniEditor = () => {
         </div>
       </div>
       ${!miniEditorMinimized ? (miniStepMode ? stepModeUI : normalModeUI) : ''}
+      <!-- 크기 조절 핸들 (모든 모서리/변) -->
+      <div class="resize-handle resize-n" data-dir="n"></div>
+      <div class="resize-handle resize-ne" data-dir="ne"></div>
+      <div class="resize-handle resize-e" data-dir="e"></div>
+      <div class="resize-handle resize-se" data-dir="se"></div>
+      <div class="resize-handle resize-s" data-dir="s"></div>
+      <div class="resize-handle resize-sw" data-dir="sw"></div>
+      <div class="resize-handle resize-w" data-dir="w"></div>
+      <div class="resize-handle resize-nw" data-dir="nw"></div>
     </div>
   `
 }
@@ -3556,9 +3604,24 @@ const renderApp = () => {
 }
 
 const attachIntroEvents = () => {
-  const startBtn = document.querySelector('#start-btn')
-  if (startBtn) {
-    startBtn.addEventListener('click', () => {
+  // 기존 시작 버튼은 사용하지 않음 (학생 정보 입력 카드에서 바로 시작)
+  const studentStartBtn = document.querySelector('#student-start-btn')
+  if (studentStartBtn) {
+    studentStartBtn.addEventListener('click', () => {
+      const classInput = document.querySelector('#student-class')
+      const numberInput = document.querySelector('#student-number')
+      const nameInput = document.querySelector('#student-name')
+
+      const klass = classInput?.value.trim() || ''
+      const number = numberInput?.value.trim() || ''
+      const name = nameInput?.value.trim() || ''
+
+      if (!klass || !number || !name) {
+        alert('반, 번호, 이름을 모두 입력해 주세요!')
+        return
+      }
+
+      studentInfo = { klass, number, name }
       currentPage = 'concept'
       renderApp()
     })
@@ -3716,6 +3779,101 @@ const initMiniEditorDrag = () => {
     isDragging = false
     if (editor) editor.style.cursor = ''
   })
+}
+
+// 미니 에디터 리사이즈 기능 (모든 모서리/변)
+let isResizing = false
+let resizeDir = ''
+let resizeStart = { x: 0, y: 0, width: 0, height: 0, left: 0, top: 0 }
+let resizeListenersAttached = false
+
+const initMiniEditorResize = () => {
+  const editor = document.querySelector('#mini-editor')
+  if (!editor) return
+
+  const handles = editor.querySelectorAll('.resize-handle')
+  if (!handles.length) return
+
+  handles.forEach(handle => {
+    handle.addEventListener('mousedown', (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+
+      const rect = editor.getBoundingClientRect()
+      // 시작 상태 저장
+      resizeDir = handle.dataset.dir || ''
+      resizeStart = {
+        x: e.clientX,
+        y: e.clientY,
+        width: rect.width,
+        height: rect.height,
+        left: rect.left,
+        top: rect.top
+      }
+
+      // 절대 위치 기준으로 전환
+      editor.style.left = rect.left + 'px'
+      editor.style.top = rect.top + 'px'
+      editor.style.right = 'auto'
+      editor.style.bottom = 'auto'
+
+      isResizing = true
+    })
+  })
+
+  if (!resizeListenersAttached) {
+    const onMouseMove = (e) => {
+      if (!isResizing) return
+      const editorEl = document.querySelector('#mini-editor')
+      if (!editorEl) return
+
+      const dx = e.clientX - resizeStart.x
+      const dy = e.clientY - resizeStart.y
+
+      const minWidth = 320
+      const minHeight = 260
+
+      let newWidth = resizeStart.width
+      let newHeight = resizeStart.height
+      let newLeft = resizeStart.left
+      let newTop = resizeStart.top
+
+      if (resizeDir.includes('e')) {
+        newWidth = resizeStart.width + dx
+      }
+      if (resizeDir.includes('s')) {
+        newHeight = resizeStart.height + dy
+      }
+      if (resizeDir.includes('w')) {
+        newWidth = resizeStart.width - dx
+        newLeft = resizeStart.left + dx
+      }
+      if (resizeDir.includes('n')) {
+        newHeight = resizeStart.height - dy
+        newTop = resizeStart.top + dy
+      }
+
+      // 최소/최대 크기 제한
+      newWidth = Math.max(minWidth, Math.min(newWidth, window.innerWidth - 40))
+      newHeight = Math.max(minHeight, Math.min(newHeight, window.innerHeight - 40))
+
+      editorEl.style.width = newWidth + 'px'
+      editorEl.style.height = newHeight + 'px'
+      editorEl.style.left = Math.max(0, newLeft) + 'px'
+      editorEl.style.top = Math.max(0, newTop) + 'px'
+      editorEl.style.right = 'auto'
+      editorEl.style.bottom = 'auto'
+    }
+
+    const onMouseUp = () => {
+      isResizing = false
+      resizeDir = ''
+    }
+
+    document.addEventListener('mousemove', onMouseMove)
+    document.addEventListener('mouseup', onMouseUp)
+    resizeListenersAttached = true
+  }
 }
 
 const attachEvents = () => {
@@ -3993,7 +4151,9 @@ const attachEvents = () => {
     })
   }
 
+  // 미니 에디터 드래그/리사이즈 초기화
   initMiniEditorDrag()
+  initMiniEditorResize()
 
   // 개념 페이지 이벤트
   if (currentPage === 'concept') {
@@ -4577,6 +4737,49 @@ if (runExperimentBtn) {
         
         feedbackEl.innerHTML = isCorrect ? feedbacks[quizNum].correct : feedbacks[quizNum].wrong
         feedbackEl.className = 'quiz-feedback ' + (isCorrect ? 'correct' : 'wrong')
+
+        // 이 카드가 정답인지 여부를 저장 (점수 계산용)
+        quizCard.dataset.userCorrect = isCorrect ? 'true' : 'false'
+
+        // 점수/메시지 업데이트
+        const cards = document.querySelectorAll('.quiz-card')
+        const total = cards.length
+        let answered = 0
+        let correctCount = 0
+
+        cards.forEach(card => {
+          if (card.classList.contains('answered')) {
+            answered++
+            // 사용자가 정답을 눌렀는지 여부는 카드에 플래그로 저장
+            const userCorrect = card.dataset.userCorrect === 'true'
+            if (userCorrect) {
+              correctCount++
+            }
+          }
+        })
+
+        const scoreTextEl = document.querySelector('#quiz-score-text')
+        const scoreMsgEl = document.querySelector('#quiz-score-message')
+
+        if (scoreTextEl) {
+          scoreTextEl.textContent = `지금까지 맞힌 개수: ${correctCount} / ${total}`
+        }
+
+        if (scoreMsgEl) {
+          if (answered === 0) {
+            scoreMsgEl.textContent = '문제를 풀면서 개념을 정리해 보세요.'
+          } else if (answered < total) {
+            scoreMsgEl.textContent = `${correctCount}문제 맞았어요! 나머지도 도전해 볼까요?`
+          } else {
+            if (correctCount === total) {
+              scoreMsgEl.textContent = '🎉 3/3 정답! 잘했어요! 반복문 개념이 아주 탄탄해요.'
+            } else if (correctCount === 2) {
+              scoreMsgEl.textContent = '👍 2문제 정답! 한 문제만 다시 복습해 보면 더 완벽해요.'
+            } else {
+              scoreMsgEl.textContent = '괜찮아요! 틀린 문제를 다시 보면서 개념을 한 번 더 정리해 봅시다.'
+            }
+          }
+        }
       })
     })
   }

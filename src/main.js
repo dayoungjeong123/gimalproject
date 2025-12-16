@@ -1,6 +1,6 @@
 import './style.css'
 import { auth, db, storage } from './firebaseConfig'
-import { onAuthStateChanged, signOut, getRedirectResult } from 'firebase/auth'
+import { onAuthStateChanged, signOut } from 'firebase/auth'
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore'
 import { ref as storageRef, uploadString } from 'firebase/storage'
 
@@ -4140,36 +4140,46 @@ const renderApp = () => {
 }
 
 // Firebase 인증 상태 감시 (student.html에서만 의미 있음)
-// 리다이렉트 결과 먼저 처리
-getRedirectResult(auth)
-  .then((result) => {
-    if (result) {
-      firebaseUser = result.user
-      console.log('리다이렉트 로그인 성공:', result.user)
+// signInWithPopup 사용 시 getRedirectResult는 필요 없음
+// 인증 상태 확인 시 약간의 지연을 두어 상태 동기화 대기
+let authCheckTimeout = null
+let hasCheckedAuth = false
+
+onAuthStateChanged(auth, (user) => {
+  firebaseUser = user
+  
+  // student.html 페이지에서만 인증 체크 수행
+  if (window.location.pathname.includes('student')) {
+    // 첫 번째 인증 상태 확인 시 약간의 지연을 두어 상태 동기화 대기
+    if (!hasCheckedAuth) {
+      hasCheckedAuth = true
+      // 약간의 지연 후 인증 상태 재확인 (popup 로그인 후 상태 동기화 대기)
+      if (authCheckTimeout) clearTimeout(authCheckTimeout)
+      authCheckTimeout = setTimeout(() => {
+        // auth.currentUser를 직접 확인하여 더 안정적으로 체크
+        const currentUser = auth.currentUser
+        if (!currentUser) {
+          console.log('인증되지 않은 사용자, 메인 페이지로 리다이렉트')
+          window.location.href = '/'
+        } else {
+          console.log('인증된 사용자 확인:', currentUser.email)
+          renderApp()
+        }
+      }, 100) // 100ms 지연으로 인증 상태 동기화 대기
+    } else {
+      // 이후 인증 상태 변화는 즉시 처리
+      if (!user) {
+        console.log('로그아웃 감지, 메인 페이지로 리다이렉트')
+        window.location.href = '/'
+      } else {
+        renderApp()
+      }
     }
-    // 인증 상태 감시 시작
-    onAuthStateChanged(auth, (user) => {
-      firebaseUser = user
-      // student.html에서 로그인이 안 되어 있으면 메인으로 돌려보내기
-      if (!user && window.location.pathname.includes('student')) {
-        window.location.href = '/'
-      } else {
-        renderApp()
-      }
-    })
-  })
-  .catch((err) => {
-    console.error('리다이렉트 결과 처리 오류:', err)
-    // 오류가 있어도 인증 상태 감시는 시작
-    onAuthStateChanged(auth, (user) => {
-      firebaseUser = user
-      if (!user && window.location.pathname.includes('student')) {
-        window.location.href = '/'
-      } else {
-        renderApp()
-      }
-    })
-  })
+  } else {
+    // student.html이 아닌 페이지에서는 renderApp만 호출
+    renderApp()
+  }
+})
 
 const attachIntroEvents = () => {
   // 기존 시작 버튼은 사용하지 않음 (학생 정보 입력 카드에서 바로 시작)

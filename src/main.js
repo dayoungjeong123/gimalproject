@@ -3,7 +3,6 @@ import { auth, db, storage } from './firebaseConfig'
 import { onAuthStateChanged, signOut } from 'firebase/auth'
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore'
 import { ref as storageRef, uploadString } from 'firebase/storage'
-import * as monaco from 'monaco-editor'
 
 // ============================================
 // 🎯 앱 상태 관리
@@ -41,7 +40,7 @@ let apiKeyStatus = 'checking' // checking, valid, invalid, empty
 // Firebase 로그인 사용자 (student.html에서 사용)
 let firebaseUser = null
 
-// Monaco Editor 인스턴스 (실행 흐름 페이지)
+// ACE Editor 인스턴스 (실행 흐름 페이지)
 let traceEditor = null
 
 // ============================================
@@ -2023,7 +2022,7 @@ const renderPythonPage = () => {
             <h3>✏️ 코드 입력</h3>
             <div class="btn-row">
               <button class="btn ghost small" id="btn-reset">📋 예제</button>
-              <button class="btn primary small" id="btn-run-check">▶ 실행하기</button>
+              <button class="btn primary small" id="btn-run-python">▶ 파이썬 실행</button>
               <button class="btn primary small" id="btn-step-start">👣 실행 흐름 보기</button>
             </div>
           </div>
@@ -2033,7 +2032,7 @@ const renderPythonPage = () => {
               <div id="code-editor" style="height: 400px;"></div>
             ` : `
               <div class="code-with-lines">
-                ${(pythonCode || starterCode).split('\\n').map((line, idx) => {
+                ${(pythonCode || starterCode).split('\n').map((line, idx) => {
                   const lineNum = idx + 1
                   const isActive = currentStep?.lineNum === lineNum
                   const isExecuted = latestTrace.slice(0, pythonStepIndex + 1).some(t => t.lineNum === lineNum)
@@ -2084,14 +2083,32 @@ const renderPythonPage = () => {
             <div class="error-display" id="error-display"></div>
           </div>
           
-          <!-- 출력 결과 -->
+          <!-- 변수 상태 -->
+          <div class="variables-section">
+            <h4>📊 변수 상태</h4>
+            <div class="variables-display" id="variables-display">
+              ${Object.keys(currentStep?.variables || {}).length > 0
+                ? Object.entries(currentStep?.variables || {}).map(([k, v]) => 
+                    `<div class="var-item"><span class="var-name">${k}</span> = <span class="var-value">${v}</span></div>`
+                  ).join('')
+                : '<span class="muted">아직 변수가 없어요</span>'}
+            </div>
+          </div>
+          
+          <!-- 출력 결과 (trace용) -->
           <div class="output-section">
             <h4>💬 출력 결과</h4>
-            <div class="output-display">
+            <div class="output-display" id="output-display">
               ${currentOutputs.length > 0 
                 ? currentOutputs.map(o => `<div class="output-line">${o}</div>`).join('') 
                 : '<span class="muted">아직 출력이 없어요</span>'}
         </div>
+          </div>
+          
+          <!-- 파이썬 실행 결과 -->
+          <div class="python-run-section" id="python-run-section" style="display: none;">
+            <h4>🐍 파이썬 실행 결과</h4>
+            <div class="python-run-output" id="python-run-output"></div>
           </div>
         </div>
       </section>
@@ -5112,27 +5129,26 @@ if (runExperimentBtn) {
     }
   }
 
-  // 실행 흐름 페이지 (Fake Interpreter 방식)
+  // 실행 흐름 페이지 (ACE Editor + Skulpt 방식)
   if (currentPage === 'trace') {
     const resetBtn = document.querySelector('#btn-reset')
-    const runCheckBtn = document.querySelector('#btn-run-check')
+    const runPythonBtn = document.querySelector('#btn-run-python')
     const stepStartBtn = document.querySelector('#btn-step-start')
     const editorHost = document.querySelector('#code-editor')
 
-    // Monaco Editor 초기화 (한 번만)
-    if (editorHost && !traceEditor) {
-      traceEditor = monaco.editor.create(editorHost, {
-        value: pythonCode || starterCode,
-        language: 'python',
-        theme: 'vs',
+    // ACE Editor 초기화 (한 번만)
+    if (editorHost && !traceEditor && typeof ace !== 'undefined') {
+      traceEditor = ace.edit(editorHost)
+      traceEditor.setTheme('ace/theme/monokai')
+      traceEditor.session.setMode('ace/mode/python')
+      traceEditor.setValue(pythonCode || starterCode)
+      traceEditor.setOptions({
         fontSize: 16,
         fontFamily: 'Consolas, Monaco, monospace',
-        automaticLayout: true,
-        minimap: { enabled: false },
-        scrollBeyondLastLine: false,
         tabSize: 4,
-        insertSpaces: true,
-        wordWrap: 'on'
+        useSoftTabs: true,
+        wrap: true,
+        showPrintMargin: false
       })
     }
 
@@ -5149,53 +5165,115 @@ if (runExperimentBtn) {
         }
         const errorSection = document.querySelector('#error-section')
         const errorDisplay = document.querySelector('#error-display')
+        const runSection = document.querySelector('#python-run-section')
+        const runOutput = document.querySelector('#python-run-output')
         if (errorSection) errorSection.style.display = 'none'
         if (errorDisplay) errorDisplay.textContent = ''
+        if (runSection) runSection.style.display = 'none'
+        if (runOutput) runOutput.textContent = ''
       })
     }
 
-    // [실행하기] 문법 검사만 수행
-    if (runCheckBtn) {
-      runCheckBtn.addEventListener('click', () => {
-        const code = traceEditor ? traceEditor.getValue() : (pythonCode || starterCode)
+    // [▶ 파이썬 실행] Skulpt로 실제 파이썬 실행
+    if (runPythonBtn) {
+      runPythonBtn.addEventListener('click', () => {
+        let code = ''
+        if (traceEditor) {
+          code = traceEditor.getValue()
+        } else if (editorHost) {
+          const textarea = editorHost.querySelector('textarea')
+          if (textarea) {
+            code = textarea.value
+          } else {
+            code = pythonCode || starterCode
+          }
+        } else {
+          code = pythonCode || starterCode
+        }
         pythonCode = code
 
+        const runSection = document.querySelector('#python-run-section')
+        const runOutput = document.querySelector('#python-run-output')
         const errorSection = document.querySelector('#error-section')
         const errorDisplay = document.querySelector('#error-display')
+
         if (errorSection) errorSection.style.display = 'none'
         if (errorDisplay) errorDisplay.textContent = ''
+        if (runSection) runSection.style.display = 'block'
+        if (runOutput) runOutput.textContent = '실행 중...'
 
-        const syntaxCheck = checkPythonSyntax(code)
-
-        if (!syntaxCheck.valid) {
-          if (errorSection) errorSection.style.display = 'block'
-          if (errorDisplay) {
-            let msg = syntaxCheck.error || '문법 오류가 발생했습니다.'
-            if (syntaxCheck.lineNum) {
-              msg = `줄 ${syntaxCheck.lineNum}: ${msg}`
-            }
-
-            let hint = ''
-            const lower = msg.toLowerCase()
-            if (syntaxCheck.type === 'SyntaxError' || lower.includes('syntaxerror')) {
-              hint = '힌트: 콜론(:)이나 괄호가 빠지지 않았는지 확인해 보세요.'
-            } else if (syntaxCheck.type === 'IndentationError' || lower.includes('indentationerror')) {
-              hint = '힌트: 들여쓰기가 일정한지, 같은 블록의 줄들이 같은 칸수만큼 띄워졌는지 확인해 보세요.'
-            } else if (syntaxCheck.type === 'NameError' || lower.includes('nameerror')) {
-              hint = '힌트: 변수를 사용하기 전에 먼저 값을 넣어 주었는지(선언했는지) 확인해 보세요.'
-            }
-
-            errorDisplay.textContent = hint ? `${msg}\n${hint}` : msg
+        try {
+          if (typeof window.Sk === 'undefined') {
+            if (runOutput) runOutput.textContent = '❌ Skulpt가 로드되지 않았습니다. 페이지를 새로고침해 주세요.'
+            return
           }
-          lastValidPythonCode = ''
-          return
-        }
 
-        lastValidPythonCode = code
+          const Sk = window.Sk
+          let outputText = ''
+
+          Sk.configure({
+            output: (text) => {
+              outputText += text
+            },
+            read: (x) => {
+              if (Sk.builtinFiles && Sk.builtinFiles.files && Sk.builtinFiles.files[x]) {
+                return Sk.builtinFiles.files[x]
+              }
+              throw 'File not found: \'' + x + '\''
+            }
+          })
+
+          const compiled = Sk.importMainWithBody('<stdin>', false, code)
+          
+          if (compiled && compiled.then) {
+            compiled.then(() => {
+              if (runOutput) {
+                if (outputText.trim()) {
+                  runOutput.textContent = outputText
+                } else {
+                  runOutput.textContent = '(출력 없음)'
+                }
+              }
+            }).catch((err) => {
+              let errorMsg = ''
+              if (err.traceback) {
+                errorMsg = err.traceback.toString()
+              } else if (err.toString) {
+                errorMsg = err.toString()
+              } else {
+                errorMsg = String(err)
+              }
+              if (runOutput) {
+                runOutput.textContent = `❌ 오류 발생:\n${errorMsg}`
+              }
+            })
+          } else {
+            if (runOutput) {
+              if (outputText.trim()) {
+                runOutput.textContent = outputText
+              } else {
+                runOutput.textContent = '(출력 없음)'
+              }
+            }
+          }
+        } catch (err) {
+          let errorMsg = ''
+          if (err.traceback) {
+            errorMsg = err.traceback.toString()
+          } else if (err.toString) {
+            errorMsg = err.toString()
+          } else {
+            errorMsg = String(err)
+          }
+
+          if (runOutput) {
+            runOutput.textContent = `❌ 오류 발생:\n${errorMsg}`
+          }
+        }
       })
     }
 
-    // [실행 흐름 보기] 문법 검사 + trace 실행
+    // [👣 실행 흐름 보기] trace 실행 (파이썬 실행과 분리)
     if (stepStartBtn) {
       stepStartBtn.addEventListener('click', () => {
         const code = traceEditor ? traceEditor.getValue() : (pythonCode || starterCode)
@@ -5317,14 +5395,33 @@ if (runExperimentBtn) {
       // 2. 코드 하이라이트 업데이트
       document.querySelectorAll('.code-row').forEach(row => {
         const lineNum = parseInt(row.querySelector('.line-number')?.textContent)
-        row.classList.remove('active')
+        row.classList.remove('active', 'executed')
         if (lineNum === currentStep.lineNum) {
           row.classList.add('active')
+        } else {
+          // 현재 단계 이전에 실행된 줄은 executed 표시
+          const executedBefore = latestTrace.slice(0, pythonStepIndex).some(t => t.lineNum === lineNum)
+          if (executedBefore) {
+            row.classList.add('executed')
+          }
         }
       })
       
-// 3. 출력 업데이트 (end 파라미터 고려해서 한 줄로 합침)
-      const outputDisplay = document.querySelector('.output-display')
+      // 3. 변수 상태 업데이트
+      const variablesDisplay = document.querySelector('#variables-display')
+      if (variablesDisplay && currentStep.variables) {
+        const vars = currentStep.variables
+        if (Object.keys(vars).length > 0) {
+          variablesDisplay.innerHTML = Object.entries(vars)
+            .map(([k, v]) => `<div class="var-item"><span class="var-name">${k}</span> = <span class="var-value">${v}</span></div>`)
+            .join('')
+        } else {
+          variablesDisplay.innerHTML = '<span class="muted">아직 변수가 없어요</span>'
+        }
+      }
+      
+      // 4. 출력 업데이트 (end 파라미터 고려해서 한 줄로 합침)
+      const outputDisplay = document.querySelector('#output-display')
       if (outputDisplay) {
         // 전체 출력 다시 계산 (end 파라미터 고려)
         const outputLines = []
@@ -5348,10 +5445,12 @@ if (runExperimentBtn) {
         // 출력 표시 업데이트
         if (outputLines.length > 0) {
           outputDisplay.innerHTML = outputLines.map(o => `<div class="output-line">${o}</div>`).join('')
+        } else {
+          outputDisplay.innerHTML = '<span class="muted">아직 출력이 없어요</span>'
         }
       }
       
-      // 4. 단계 정보 업데이트
+      // 5. 단계 정보 업데이트
       const stepBadge = document.querySelector('.step-badge-big')
       const stepDesc = document.querySelector('.step-description')
       const iterBadge = document.querySelector('.iteration-badge')
@@ -5367,7 +5466,7 @@ if (runExperimentBtn) {
         }
       }
       
-      // 5. 버튼 상태 업데이트
+      // 6. 버튼 상태 업데이트
       const prevBtn = document.querySelector('#btn-step-prev')
       const firstBtn = document.querySelector('#btn-step-first')
       const nextBtn = document.querySelector('#btn-step-next')
@@ -5384,10 +5483,8 @@ if (runExperimentBtn) {
     if (stepFirstBtn) {
       stepFirstBtn.addEventListener('click', (e) => {
         e.preventDefault()
-        const scrollY = window.scrollY // 현재 스크롤 위치 저장
         pythonStepIndex = 0
-        renderApp()
-        window.scrollTo(0, scrollY) // 스크롤 위치 복원
+        updateStepUI()
       })
     }
 
@@ -5395,10 +5492,8 @@ if (runExperimentBtn) {
       stepPrevBtn.addEventListener('click', (e) => {
         e.preventDefault()
         if (pythonStepIndex > 0) {
-          const scrollY = window.scrollY // 현재 스크롤 위치 저장
           pythonStepIndex--
-          renderApp()
-          window.scrollTo(0, scrollY) // 스크롤 위치 복원
+          updateStepUI()
         }
       })
     }

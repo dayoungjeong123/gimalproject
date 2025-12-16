@@ -1,6 +1,6 @@
 import './style.css'
 import { auth, db, storage } from './firebaseConfig'
-import { onAuthStateChanged, signOut } from 'firebase/auth'
+import { onAuthStateChanged, signOut, getRedirectResult } from 'firebase/auth'
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore'
 import { ref as storageRef, uploadString } from 'firebase/storage'
 
@@ -4140,15 +4140,36 @@ const renderApp = () => {
 }
 
 // Firebase 인증 상태 감시 (student.html에서만 의미 있음)
-onAuthStateChanged(auth, (user) => {
-  firebaseUser = user
-  // student.html에서 로그인이 안 되어 있으면 메인으로 돌려보내기
-  if (!user && window.location.pathname.includes('student')) {
-    window.location.href = '/'
-  } else {
-    renderApp()
-  }
-})
+// 리다이렉트 결과 먼저 처리
+getRedirectResult(auth)
+  .then((result) => {
+    if (result) {
+      firebaseUser = result.user
+      console.log('리다이렉트 로그인 성공:', result.user)
+    }
+    // 인증 상태 감시 시작
+    onAuthStateChanged(auth, (user) => {
+      firebaseUser = user
+      // student.html에서 로그인이 안 되어 있으면 메인으로 돌려보내기
+      if (!user && window.location.pathname.includes('student')) {
+        window.location.href = '/'
+      } else {
+        renderApp()
+      }
+    })
+  })
+  .catch((err) => {
+    console.error('리다이렉트 결과 처리 오류:', err)
+    // 오류가 있어도 인증 상태 감시는 시작
+    onAuthStateChanged(auth, (user) => {
+      firebaseUser = user
+      if (!user && window.location.pathname.includes('student')) {
+        window.location.href = '/'
+      } else {
+        renderApp()
+      }
+    })
+  })
 
 const attachIntroEvents = () => {
   // 기존 시작 버튼은 사용하지 않음 (학생 정보 입력 카드에서 바로 시작)

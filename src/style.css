@@ -7825,16 +7825,52 @@ textarea:focus {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+  align-items: center;
 }
 
 .landing-buttons .btn {
   justify-content: center;
   font-size: 0.95rem;
+  width: 100%;
+  max-width: 280px;
+}
+
+.student-meta {
+  display: block;
+  margin-top: 0.1rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.nav-user-info {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.1rem;
+}
+
+.nav-user-info .user-name {
+  font-weight: 600;
+}
+
+.nav-user-info .user-email {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.nav-user-info .user-student-meta {
+  font-size: 0.8rem;
+  color: var(--text-muted);
 }
 
 @media (min-width: 640px) {
   .landing-buttons {
     flex-direction: row;
+    justify-content: center;
+  }
+  
+  .landing-buttons .btn {
+    max-width: 240px;
   }
 }
 
@@ -7869,6 +7905,91 @@ textarea:focus {
   box-shadow: 0 4px 12px rgba(255, 170, 122, 0.3);
 }
 
+/* 그림 그리기 영역 */
+.chat-and-draw-layout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
+  margin-bottom: 2rem;
+}
+
+.draw-container {
+  background: linear-gradient(145deg, #fff, var(--purple-light));
+  border: 3px solid var(--purple-medium);
+  border-radius: 30px;
+  padding: 1.5rem;
+}
+
+.draw-container h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.3rem;
+  color: var(--text-dark);
+}
+
+.draw-desc {
+  margin: 0 0 1rem;
+  color: var(--text-medium);
+  font-size: 0.95rem;
+}
+
+.draw-toolbar {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+
+.draw-toolbar label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  color: var(--text-dark);
+}
+
+.draw-toolbar input[type="color"] {
+  width: 40px;
+  height: 40px;
+  border: 2px solid var(--purple-medium);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.draw-toolbar input[type="range"] {
+  width: 100px;
+}
+
+/* 캔버스 액자 스타일 */
+.draw-canvas-wrap {
+  position: relative;
+  display: inline-block;
+  padding: 20px;
+  background: linear-gradient(135deg, #f5f5f5, #e8e8e8);
+  border: 8px solid #d4a574;
+  border-radius: 12px;
+  box-shadow: 
+    inset 0 0 0 2px #c9a068,
+    inset 0 0 0 4px #b8955c,
+    0 8px 24px rgba(0, 0, 0, 0.15),
+    0 4px 12px rgba(0, 0, 0, 0.1);
+  background-image: 
+    linear-gradient(45deg, rgba(212, 165, 116, 0.1) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(212, 165, 116, 0.1) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgba(212, 165, 116, 0.1) 75%),
+    linear-gradient(-45deg, transparent 75%, rgba(212, 165, 116, 0.1) 75%);
+  background-size: 20px 20px;
+  background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+}
+
+#reflection-canvas {
+  display: block;
+  background: #fff;
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  cursor: crosshair;
+}
+
 /* 챗봇 반응형 */
 @media (max-width: 600px) {
   .intro-content {
@@ -7894,6 +8015,21 @@ textarea:focus {
 
   .chat-input-area .btn {
     align-self: stretch;
+  }
+
+  .chat-and-draw-layout {
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+  }
+
+  .draw-canvas-wrap {
+    padding: 15px;
+  }
+
+  #reflection-canvas {
+    width: 100%;
+    max-width: 100%;
+    height: auto;
   }
 }
 

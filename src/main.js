@@ -533,6 +533,9 @@ const renderNavigation = () => {
           <div class="nav-user-info">
             <span class="user-name">${firebaseUser.displayName || '학생'}</span>
             ${firebaseUser.email ? `<span class="user-email">${firebaseUser.email}</span>` : ''}
+            ${(studentInfo.klass && studentInfo.number && studentInfo.name) ? `
+              <span class="user-student-meta">${studentInfo.klass}반 ${studentInfo.number}번 ${studentInfo.name}</span>
+            ` : ''}
           </div>
           <button class="btn mini ghost" id="student-logout-btn">로그아웃</button>
         ` : ''}
@@ -4503,7 +4506,7 @@ const renderChatbotPage = () => {
             <button class="btn ghost" id="draw-clear">지우기</button>
           </div>
           <div class="draw-canvas-wrap">
-            <canvas id="reflection-canvas" width="400" height="260"></canvas>
+            <canvas id="reflection-canvas" width="800" height="400"></canvas>
           </div>
         </div>
       </div>
@@ -5136,6 +5139,11 @@ const attachIntroEvents = () => {
       }
 
       studentInfo = { klass, number, name }
+      try {
+        localStorage.setItem('gimal_student_info', JSON.stringify(studentInfo))
+      } catch (e) {
+        console.warn('학생 정보 저장 실패:', e)
+      }
       currentPage = 'concept'
       renderApp()
       // 상단 메뉴까지 함께 보이도록 화면을 맨 위로 스크롤

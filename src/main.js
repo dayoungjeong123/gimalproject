@@ -5136,11 +5136,6 @@ const attachIntroEvents = () => {
       }
 
       studentInfo = { klass, number, name }
-      try {
-        localStorage.setItem('gimal_student_info', JSON.stringify(studentInfo))
-      } catch (e) {
-        console.warn('학생 정보 저장 실패:', e)
-      }
       currentPage = 'concept'
       renderApp()
       // 상단 메뉴까지 함께 보이도록 화면을 맨 위로 스크롤

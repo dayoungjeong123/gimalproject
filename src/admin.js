@@ -24,6 +24,8 @@ const submissionListEl = document.getElementById('submission-list')
 const projectCodeViewEl = document.getElementById('project-code-view')
 const reflectionViewEl = document.getElementById('reflection-view')
 const drawingViewEl = document.getElementById('drawing-view')
+const quizViewEl = document.getElementById('quiz-view')
+const ruleViewEl = document.getElementById('rule-view')
 
 const loadSubmissionsFromFirebase = async () => {
   try {
@@ -43,14 +45,21 @@ const loadSubmissionsFromFirebase = async () => {
         id: doc.id,
         date: dateStr,
         className: data.studentClass || '미지정',
+        studentNumber: data.studentNumber || null,
         userName: data.studentName || '이름 없음',
         submittedAt: timeStr,
+        // 새 구조: Firestore에 직접 저장된 코드
+        projectCode: data.projectCode || null,
+        // 예전 구조: Storage 경로 (있으면 호환용으로 사용)
         projectCodePath: data.projectCodePath || null,
+        // 프로젝트 규칙 설명
+        projectRuleExplanation: data.projectRuleExplanation || null,
         reflectionText:
           userMessages.length > 0
             ? userMessages.join('\n\n')
             : '수업 성찰 내용이 아직 충분히 기록되지 않았습니다.',
-        drawingUrl: null
+        // 그림 URL (Storage에서 가져온 URL)
+        drawingUrl: data.drawingUrl || null
       }
     })
 
@@ -164,7 +173,7 @@ const renderUserFilters = () => {
     .map(
       (name) => `
       <button
-        class="teacher-user-btn ${activeUserFilter === name ? 'active' : ''}"
+        class="teacher-user-item ${activeUserFilter === name ? 'active' : ''}"
         data-user="${name}"
       >
         ${name}
@@ -173,7 +182,7 @@ const renderUserFilters = () => {
     )
     .join('')
 
-  userFilterListEl.querySelectorAll('.teacher-user-btn').forEach((btn) => {
+  userFilterListEl.querySelectorAll('.teacher-user-item').forEach((btn) => {
     btn.addEventListener('click', () => {
       const name = btn.dataset.user
       if (activeUserFilter === name) {
@@ -195,6 +204,9 @@ const renderSubmissionList = () => {
       '<p class="teacher-empty-message">선택한 조건에 해당하는 제출 데이터가 없습니다.</p>'
     projectCodeViewEl.textContent =
       '# 제출 데이터를 선택하면 이 영역에 프로젝트 코드가 표시됩니다.'
+    if (ruleViewEl) {
+      ruleViewEl.textContent = '제출된 규칙 설명이 이 영역에 표시됩니다.'
+    }
     reflectionViewEl.textContent =
       '제출 데이터를 선택하면 이 영역에 수업 성찰 내용이 표시됩니다.'
     drawingViewEl.innerHTML =
@@ -290,9 +302,24 @@ const renderDetailPanels = async (id) => {
   const submission = submissions.find((s) => s.id === id)
   if (!submission) return
 
+  // 기본 안내 초기화
   projectCodeViewEl.textContent = '# 프로젝트 코드를 불러오는 중입니다...'
+  if (ruleViewEl) {
+    ruleViewEl.textContent = '규칙 설명을 불러오는 중입니다...'
+  }
 
-  if (submission.projectCodePath) {
+  // 규칙 설명 표시
+  if (ruleViewEl) {
+    ruleViewEl.textContent =
+      submission.projectRuleExplanation || '제출된 규칙 설명이 없습니다.'
+  }
+
+  // 1) 새 구조: Firestore에 문자열로 저장된 projectCode 우선 사용
+  if (submission.projectCode) {
+    projectCodeViewEl.textContent = submission.projectCode
+
+  // 2) 예전 제출본: Storage 경로(projectCodePath)를 통해 불러오기 (호환용)
+  } else if (submission.projectCodePath) {
     try {
       const ref = storageRef(storage, submission.projectCodePath)
       let url
@@ -311,7 +338,7 @@ const renderDetailPanels = async (id) => {
           throw new Error(`HTTP ${res.status}: ${res.statusText}`)
         }
         const codeText = await res.text()
-        projectCodeViewEl.textContent = codeText
+        projectCodeViewEl.textContent = codeText || '# (파일 내용이 비어 있습니다.)'
       } catch (fetchErr) {
         console.error('파일 내용 가져오기 실패:', fetchErr)
         projectCodeViewEl.textContent =
@@ -330,8 +357,25 @@ const renderDetailPanels = async (id) => {
   reflectionViewEl.textContent =
     submission.reflectionText || '수업 성찰 내용이 제출되지 않았습니다.'
 
+  // 그림 표시
   if (submission.drawingUrl) {
-    drawingViewEl.innerHTML = `<img src="${submission.drawingUrl}" alt="수업 후기 그림" class="teacher-drawing-image" />`
+    const value = submission.drawingUrl
+
+    // 1) 이미 전체 URL인 경우 그대로 사용
+    if (typeof value === 'string' && value.startsWith('http')) {
+      drawingViewEl.innerHTML = `<img src="${value}" alt="수업 후기 그림" class="teacher-drawing-image" />`
+    } else {
+      // 2) Storage 경로만 저장된 예전 데이터인 경우: getDownloadURL로 URL 생성
+      try {
+        const ref = storageRef(storage, value)
+        const url = await getDownloadURL(ref)
+        drawingViewEl.innerHTML = `<img src="${url}" alt="수업 후기 그림" class="teacher-drawing-image" />`
+      } catch (err) {
+        console.error('그림 URL 변환 실패:', err)
+        drawingViewEl.innerHTML =
+          '<div class="teacher-drawing-placeholder">수업 후기 그림을 불러올 수 없습니다.</div>'
+      }
+    }
   } else {
     drawingViewEl.innerHTML =
       '<div class="teacher-drawing-placeholder">수업 후기 그림이 제출되지 않았습니다.</div>'
@@ -339,6 +383,10 @@ const renderDetailPanels = async (id) => {
 }
 
 loadSubmissionsFromFirebase()
+
+
+
+
 
 
 

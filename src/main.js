@@ -2,7 +2,7 @@ import './style.css'
 import { auth, db, storage } from './firebaseConfig'
 import { onAuthStateChanged, signOut } from 'firebase/auth'
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore'
-import { ref as storageRef, uploadString } from 'firebase/storage'
+import { ref as storageRef, uploadString, uploadBytes, getDownloadURL } from 'firebase/storage'
 
 // ============================================
 // 🎯 앱 상태 관리
@@ -42,6 +42,21 @@ let firebaseUser = null
 
 // ACE Editor 인스턴스 (실행 흐름 페이지)
 let traceEditor = null
+
+// 레이아웃 모드 (mobile/desktop)
+let layoutMode = localStorage.getItem('layoutMode') || 'desktop' // 기본값: desktop
+
+// ============================================
+// ✏️ 문제 페이지 상태 관리
+// ============================================
+let practiceDifficulty = null // null, 'beginner', 'intermediate', 'advanced'
+let practiceProblemList = []
+let currentProblemIndex = -1 // -1: 목록 화면, 0 이상: 문제 해결 화면
+let practiceCode = ''
+let practiceTrace = []
+let practiceTraceIndex = 0
+let practiceEditor = null // ACE Editor 인스턴스 (문제 페이지용)
+let practiceHintVisible = false
 
 // ============================================
 // 🔑 OpenAI API 키 (환경변수에서 가져오기)
@@ -462,6 +477,22 @@ const sendToChatGPT = async (userMessage) => {
 // 🎨 페이지 렌더링 함수들
 // ============================================
 
+// 레이아웃 선택기 렌더링 (왼쪽 아래)
+const renderLayoutSelector = () => {
+  return `
+    <div class="layout-selector">
+      <label for="layout-mode-select" class="layout-selector-label">
+        <span class="layout-icon">📱</span>
+        <span class="layout-text">레이아웃</span>
+      </label>
+      <select id="layout-mode-select" class="layout-select">
+        <option value="mobile" ${layoutMode === 'mobile' ? 'selected' : ''}>모바일</option>
+        <option value="desktop" ${layoutMode === 'desktop' ? 'selected' : ''}>웹사이트</option>
+      </select>
+          </div>
+  `
+}
+
 const renderNavigation = () => {
   return `
     <nav class="cute-nav">
@@ -474,7 +505,7 @@ const renderNavigation = () => {
             <span class="logo-highlight">반복문 수업</span>
           </span>
         </div>
-      </div>
+        </div>
       <div class="nav-tabs">
         <button class="nav-tab ${currentPage === 'concept' ? 'active' : ''}" data-page="concept">
           <span class="tab-icon">📚</span>
@@ -568,7 +599,7 @@ const renderIntroPage = () => {
           <div class="student-info-grid">
             <div class="student-field">
               <label for="student-class">반</label>
-              <input id="student-class" type="text" placeholder="예: 1-3" value="${studentInfo.klass}">
+              <input id="student-class" type="text" placeholder="예: 1-10" value="${studentInfo.klass}">
             </div>
             <div class="student-field">
               <label for="student-number">번호</label>
@@ -576,7 +607,7 @@ const renderIntroPage = () => {
             </div>
             <div class="student-field full">
               <label for="student-name">이름</label>
-              <input id="student-name" type="text" placeholder="예: 김코딩" value="${studentInfo.name}">
+              <input id="student-name" type="text" placeholder="예:정다영" value="${studentInfo.name}">
             </div>
           </div>
           <button class="intro-btn start-learning-btn" id="student-start-btn">
@@ -1663,6 +1694,9 @@ const renderStep6Quiz = () => `
     <div class="quiz-summary">
       <div id="quiz-score-text">지금까지 맞힌 개수: 0 / 3</div>
       <div id="quiz-score-message">문제를 풀면서 개념을 정리해 보세요.</div>
+      <button class="btn primary" id="quiz-submit-btn" style="margin-top: 1rem; display: none;">
+        📤 퀴즈 제출하기
+      </button>
     </div>
   </div>
 `
@@ -2441,10 +2475,10 @@ const renderPythonPage = () => {
                     <div class="code-row ${isActive ? 'active' : ''} ${isExecuted && !isActive ? 'executed' : ''}">
                       <span class="line-number">${lineNum}</span>
                       <span class="line-code">${highlightPython(line) || ' '}</span>
-                    </div>
+        </div>
                   `
                 }).join('')}
-              </div>
+        </div>
             `}
           </div>
           
@@ -2482,7 +2516,7 @@ const renderPythonPage = () => {
           <div class="error-section" id="error-section" style="display: none;">
             <h4>❌ 문법 오류</h4>
             <div class="error-display" id="error-display"></div>
-          </div>
+        </div>
           
           <!-- 변수 상태 -->
           <div class="variables-section">
@@ -3101,89 +3135,921 @@ for choice in ["가위", "바위", "보"]:
 // ============================================
 
 // ============================================
-// ✏️ 문제 페이지 (Practice)
+// ✏️ 문제 페이지 (Practice) - 학습 경로형 구조
 // ============================================
 
-const renderPracticePage = () => {
+// 문제 데이터 정의
+const practiceProblems = {
+  beginner: [
+    {
+      id: 'b1',
+      title: '1부터 10까지 출력',
+      description: 'for문을 사용해서 1부터 10까지 숫자를 출력해보세요.',
+      hint: 'range(1, 11)을 사용하면 1부터 10까지의 숫자를 얻을 수 있어요.',
+      concepts: ['for', 'range'],
+      time: '5분',
+      skeleton: '# 1부터 10까지 출력하기\n# 여기에 코드를 작성하세요\n',
+      grading: {
+        output: ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10'],
+        requiredKeywords: ['for', 'range'],
+        expectedIterations: 10
+      }
+    },
+    {
+      id: 'b2',
+      title: '구구단 5단 출력',
+      description: 'for문을 사용해서 구구단 5단을 출력해보세요. (5 x 1 = 5 형식)',
+      hint: 'f-string을 사용하면 출력 형식을 쉽게 만들 수 있어요. 예: f"5 x {i} = {5*i}"',
+      concepts: ['for', 'range'],
+      time: '7분',
+      skeleton: '# 구구단 5단 출력하기\n# 여기에 코드를 작성하세요\n',
+      grading: {
+        output: ['5 x 1 = 5', '5 x 2 = 10', '5 x 3 = 15', '5 x 4 = 20', '5 x 5 = 25', '5 x 6 = 30', '5 x 7 = 35', '5 x 8 = 40', '5 x 9 = 45'],
+        requiredKeywords: ['for', 'range'],
+        expectedIterations: 9
+      }
+    },
+    {
+      id: 'b3',
+      title: '별 5개 출력',
+      description: 'for문을 사용해서 별(*) 5개를 한 줄에 출력해보세요.',
+      hint: 'print("*", end="")를 사용하면 줄바꿈 없이 출력할 수 있어요.',
+      concepts: ['for', 'range'],
+      time: '5분',
+      skeleton: '# 별 5개 출력하기\n# 여기에 코드를 작성하세요\n',
+      grading: {
+        output: ['*****'],
+        requiredKeywords: ['for', 'range'],
+        expectedIterations: 5
+      }
+    }
+  ],
+  intermediate: [
+    {
+      id: 'i1',
+      title: '1부터 100까지 합',
+      description: 'for문을 사용해서 1부터 100까지의 합을 구하고 출력해보세요.',
+      hint: '합계를 저장할 변수를 만들고, 반복문 안에서 누적해보세요.',
+      concepts: ['for', 'range', 'if'],
+      time: '10분',
+      skeleton: '# 1부터 100까지 합 구하기\n# 여기에 코드를 작성하세요\n',
+      grading: {
+        output: ['5050'],
+        requiredKeywords: ['for', 'range'],
+        expectedIterations: 100
+      }
+    },
+    {
+      id: 'i2',
+      title: '짝수만 출력',
+      description: '1부터 20까지의 숫자 중 짝수만 출력해보세요.',
+      hint: 'if문과 나머지 연산자(%)를 사용해보세요. i % 2 == 0이면 짝수예요.',
+      concepts: ['for', 'range', 'if'],
+      time: '8분',
+      skeleton: '# 1부터 20까지 짝수만 출력하기\n# 여기에 코드를 작성하세요\n',
+      grading: {
+        output: ['2', '4', '6', '8', '10', '12', '14', '16', '18', '20'],
+        requiredKeywords: ['for', 'range', 'if'],
+        expectedIterations: 20
+      }
+    },
+    {
+      id: 'i3',
+      title: '역순 출력',
+      description: '10부터 1까지 거꾸로 출력해보세요.',
+      hint: 'range(10, 0, -1)을 사용하면 10부터 1까지 역순으로 반복할 수 있어요.',
+      concepts: ['for', 'range'],
+      time: '7분',
+      skeleton: '# 10부터 1까지 역순 출력하기\n# 여기에 코드를 작성하세요\n',
+      grading: {
+        output: ['10', '9', '8', '7', '6', '5', '4', '3', '2', '1'],
+        requiredKeywords: ['for', 'range'],
+        expectedIterations: 10
+      }
+    }
+  ],
+  advanced: [
+    {
+      id: 'a1',
+      title: 'break로 반복 중단',
+      description: '1부터 10까지 출력하되, 5가 나오면 반복을 중단하세요.',
+      hint: 'if문으로 조건을 확인하고, break를 사용하면 반복문을 즉시 종료할 수 있어요.',
+      concepts: ['for', 'range', 'if', 'break'],
+      time: '10분',
+      skeleton: '# 5가 나오면 반복 중단하기\n# 여기에 코드를 작성하세요\n',
+      grading: {
+        output: ['1', '2', '3', '4', '5'],
+        requiredKeywords: ['for', 'range', 'break'],
+        expectedIterations: 5,
+        mustHaveBreak: true
+      }
+    },
+    {
+      id: 'a2',
+      title: 'continue로 건너뛰기',
+      description: '1부터 10까지 출력하되, 짝수는 건너뛰고 홀수만 출력하세요.',
+      hint: 'if문으로 짝수를 확인하고, continue를 사용하면 다음 반복으로 건너뛸 수 있어요.',
+      concepts: ['for', 'range', 'if', 'continue'],
+      time: '10분',
+      skeleton: '# 짝수는 건너뛰고 홀수만 출력하기\n# 여기에 코드를 작성하세요\n',
+      grading: {
+        output: ['1', '3', '5', '7', '9'],
+        requiredKeywords: ['for', 'range', 'continue'],
+        expectedIterations: 10,
+        mustHaveContinue: true
+      }
+    },
+    {
+      id: 'a3',
+      title: 'while 반복문',
+      description: 'while문을 사용해서 1부터 5까지 출력해보세요.',
+      hint: '변수를 초기화하고, while 조건을 설정한 뒤, 반복문 안에서 변수를 증가시켜야 해요.',
+      concepts: ['while'],
+      time: '12분',
+      skeleton: '# while문으로 1부터 5까지 출력하기\n# 여기에 코드를 작성하세요\n',
+      grading: {
+        output: ['1', '2', '3', '4', '5'],
+        requiredKeywords: ['while'],
+        expectedIterations: 5
+      }
+    }
+  ]
+}
+
+// 난이도 선택 화면 렌더링
+const renderDifficultySelection = () => {
   return `
     <div class="page-content practice-page">
       <div class="page-header">
         <div class="header-icon">✏️</div>
         <h1>반복문 연습 문제</h1>
-        <p class="header-desc">반복문을 활용해서 문제를 풀어보세요!</p>
+        <p class="header-desc">난이도를 선택하고 문제를 풀어보세요!</p>
       </div>
 
-      <div class="practice-grid">
-        <!-- 쉬움 문제 -->
-        <div class="practice-card level-easy">
-          <div class="practice-level">🌱 쉬움</div>
-          <div class="practice-emoji">🔢</div>
-          <h3>1부터 10까지 출력</h3>
-          <p>for문을 사용해서 1부터 10까지 숫자를 출력해보세요.</p>
-          <div class="practice-hint">
-            <strong>힌트:</strong> range(1, 11) 사용
+      <div class="difficulty-selection">
+        <div class="difficulty-card" data-difficulty="beginner">
+          <div class="difficulty-emoji">😊</div>
+          <h2>초급</h2>
+          <div class="difficulty-goal">
+            <strong>목표:</strong> 반복문 기본 구조 이해
           </div>
-          <button class="btn accent practice-btn" data-code="# 1부터 10까지 출력하기\\nfor i in range(1, 11):\\n    print(i)">🔍 정답 보기</button>
+          <div class="difficulty-concepts">
+            <strong>개념:</strong> for, range
+          </div>
         </div>
 
-        <div class="practice-card level-easy">
-          <div class="practice-level">🌱 쉬움</div>
-          <div class="practice-emoji">✖️</div>
-          <h3>구구단 출력</h3>
-          <p>원하는 단의 구구단을 출력해보세요.</p>
-          <div class="practice-hint">
-            <strong>힌트:</strong> f-string으로 출력 형식 만들기
+        <div class="difficulty-card" data-difficulty="intermediate">
+          <div class="difficulty-emoji">🤔</div>
+          <h2>중급</h2>
+          <div class="difficulty-goal">
+            <strong>목표:</strong> 조건에 따른 반복 제어
           </div>
-          <button class="btn accent practice-btn" data-code="# 구구단 5단 출력\\nfor i in range(1, 10):\\n    print(f'5 x {i} = {5*i}')">🔍 정답 보기</button>
+          <div class="difficulty-concepts">
+            <strong>개념:</strong> if + for / while
+          </div>
         </div>
 
-        <div class="practice-card level-easy">
-          <div class="practice-level">🌱 쉬움</div>
-          <div class="practice-emoji">⭐</div>
-          <h3>별 찍기</h3>
-          <p>*을 5개 한 줄에 출력해보세요.</p>
-          <div class="practice-hint">
-            <strong>힌트:</strong> print("*", end="") 사용
+        <div class="difficulty-card" data-difficulty="advanced">
+          <div class="difficulty-emoji">🔥</div>
+          <h2>고급</h2>
+          <div class="difficulty-goal">
+            <strong>목표:</strong> 실행 흐름 설계
           </div>
-          <button class="btn accent practice-btn" data-code="# 별 5개 출력\\nfor i in range(5):\\n    print('*', end='')">🔍 정답 보기</button>
-        </div>
-
-        <!-- 보통 문제 -->
-        <div class="practice-card level-medium">
-          <div class="practice-level">🌿 보통</div>
-          <div class="practice-emoji">➕</div>
-          <h3>1부터 100까지 합</h3>
-          <p>1부터 100까지의 합을 구해보세요.</p>
-          <div class="practice-hint">
-            <strong>힌트:</strong> 합계를 저장할 변수 필요
+          <div class="difficulty-concepts">
+            <strong>개념:</strong> break, continue, 조건 설계
           </div>
-          <button class="btn accent practice-btn" data-code="# 1부터 100까지 합\\ntotal = 0\\nfor i in range(1, 101):\\n    total = total + i\\nprint(f'합계: {total}')">🔍 정답 보기</button>
-        </div>
-
-        <div class="practice-card level-medium">
-          <div class="practice-level">🌿 보통</div>
-          <div class="practice-emoji">🔄</div>
-          <h3>짝수만 출력</h3>
-          <p>1부터 20까지 중 짝수만 출력해보세요.</p>
-          <div class="practice-hint">
-            <strong>힌트:</strong> if i % 2 == 0 사용
-          </div>
-          <button class="btn accent practice-btn" data-code="# 짝수만 출력\\nfor i in range(1, 21):\\n    if i % 2 == 0:\\n        print(i)">🔍 정답 보기</button>
-        </div>
-
-        <div class="practice-card level-medium">
-          <div class="practice-level">🌿 보통</div>
-          <div class="practice-emoji">🔙</div>
-          <h3>역순 출력</h3>
-          <p>10부터 1까지 거꾸로 출력해보세요.</p>
-          <div class="practice-hint">
-            <strong>힌트:</strong> range(10, 0, -1) 사용
-          </div>
-          <button class="btn accent practice-btn" data-code="# 10부터 1까지 역순\\nfor i in range(10, 0, -1):\\n    print(i)">🔍 정답 보기</button>
         </div>
       </div>
     </div>
   `
+}
+
+// 문제 목록 화면 렌더링
+const renderProblemList = () => {
+  const problems = practiceProblems[practiceDifficulty] || []
+  practiceProblemList = problems
+
+  return `
+    <div class="page-content practice-page">
+      <div class="page-header">
+        <button class="btn ghost back-btn" id="practice-back-difficulty">← 난이도 선택</button>
+        <h1>${practiceDifficulty === 'beginner' ? '초급' : practiceDifficulty === 'intermediate' ? '중급' : '고급'} 문제</h1>
+        <p class="header-desc">문제를 선택하고 실행 흐름을 탐구하며 해결해보세요!</p>
+      </div>
+
+      <div class="problem-list-grid">
+        ${problems.map((problem, idx) => `
+          <div class="problem-card" data-problem-index="${idx}">
+            <div class="problem-number">문제 ${idx + 1}</div>
+            <h3>${problem.title}</h3>
+            <div class="problem-tags">
+              ${problem.concepts.map(c => `<span class="concept-tag">${c}</span>`).join('')}
+            </div>
+            <div class="problem-meta">
+              <span class="problem-time">⏱️ ${problem.time}</span>
+            </div>
+            <button class="btn primary problem-start-btn" data-problem-index="${idx}">문제 풀기</button>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `
+}
+
+// 문제 해결 화면 렌더링 (3영역 구조)
+const renderProblemSolving = () => {
+  if (currentProblemIndex < 0 || currentProblemIndex >= practiceProblemList.length) {
+    return renderProblemList()
+  }
+
+  const problem = practiceProblemList[currentProblemIndex]
+  const isFirst = currentProblemIndex === 0
+  const isLast = currentProblemIndex === practiceProblemList.length - 1
+
+  return `
+    <div class="page-content practice-page problem-solving-page">
+      <div class="page-header">
+        <button class="btn ghost back-btn" id="practice-back-list">← 문제 목록</button>
+        <h1>문제 ${currentProblemIndex + 1}: ${problem.title}</h1>
+        <div class="problem-nav">
+          <button class="btn mini ${isFirst ? 'disabled' : ''}" id="prev-problem" ${isFirst ? 'disabled' : ''}>← 이전 문제</button>
+          <span class="problem-counter">${currentProblemIndex + 1} / ${practiceProblemList.length}</span>
+          <button class="btn mini ${isLast ? 'disabled' : ''}" id="next-problem" ${isLast ? 'disabled' : ''}>다음 문제 →</button>
+        </div>
+      </div>
+
+      <div class="problem-solving-layout">
+        <!-- 📘 문제 설명 영역 -->
+        <section class="problem-description-section">
+          <h2>📘 문제 설명</h2>
+          <div class="problem-description-content">
+            <p>${problem.description}</p>
+            <button class="btn ghost hint-toggle-btn" id="hint-toggle">
+              ${practiceHintVisible ? '▼ 힌트 숨기기' : '▶ 힌트 보기'}
+            </button>
+            ${practiceHintVisible ? `
+              <div class="hint-content">
+                <strong>💡 힌트:</strong>
+                <p>${problem.hint}</p>
+              </div>
+            ` : ''}
+          </div>
+        </section>
+
+        <!-- 💻 코드 작성 영역 (집중 영역) -->
+        <section class="code-editor-section">
+          <h2>💻 코드 작성</h2>
+          <div class="code-editor-container">
+            <div id="practice-code-editor" style="height: 400px; width: 100%;"></div>
+          </div>
+          <div class="code-actions">
+            <button class="btn primary" id="practice-run-code">▶ 실행</button>
+            <button class="btn secondary" id="practice-trace-code">👣 실행 흐름 보기</button>
+            <button class="btn ghost" id="practice-reset-code">🔄 코드 초기화</button>
+            <button class="btn success" id="practice-grade-code">📊 채점하기</button>
+          </div>
+        </section>
+
+        <!-- 🔍 실행 흐름 시각화 + 실행 결과 영역 -->
+        <section class="trace-visualization-section">
+          <h2>🔍 실행 흐름 시각화</h2>
+          <div class="trace-container">
+            ${practiceTrace.length > 0 ? `
+              <div class="trace-controls">
+                <button class="btn mini" id="trace-first">⏮ 처음</button>
+                <button class="btn mini" id="trace-prev">⏪ 이전</button>
+                <span class="trace-counter">${practiceTraceIndex + 1} / ${practiceTrace.length}</span>
+                <button class="btn mini" id="trace-next">다음 ⏩</button>
+                <button class="btn mini" id="trace-last">끝 ⏭</button>
+              </div>
+              <div class="trace-content">
+                <div class="code-preview-area">
+                  <h4>코드 실행 상태</h4>
+                  <div id="practice-code-preview" class="code-preview"></div>
+                </div>
+                <div class="variables-area">
+                  <h4>변수 변화</h4>
+                  <div id="practice-variables-display" class="variables-display"></div>
+                </div>
+              </div>
+            ` : `
+              <div class="trace-placeholder">
+                <p>코드를 작성하고 "실행 흐름 보기" 버튼을 클릭하면 실행 과정이 표시됩니다.</p>
+              </div>
+            `}
+            <div class="output-area">
+              <h4>출력 결과</h4>
+              <div id="practice-output-display" class="output-display"></div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- 채점 영역 -->
+      <section class="grading-section" id="grading-section" style="display: none;">
+        <h2>📊 채점 결과</h2>
+        <div id="grading-result"></div>
+      </section>
+    </div>
+  `
+}
+
+// 메인 문제 페이지 렌더링
+const renderPracticePage = () => {
+  if (practiceDifficulty === null) {
+    return renderDifficultySelection()
+  } else if (currentProblemIndex < 0) {
+    return renderProblemList()
+  } else {
+    return renderProblemSolving()
+  }
+}
+
+// ============================================
+// ✏️ 문제 페이지 이벤트 핸들러 및 채점 기능
+// ============================================
+
+// 실행 흐름 시각화 UI 업데이트 (문제 페이지용)
+const updatePracticeTraceUI = () => {
+  if (practiceTrace.length === 0) return
+
+  const currentStep = practiceTrace[practiceTraceIndex]
+  const codeLines = practiceCode.split('\n')
+
+  // 코드 미리보기 업데이트 (하이라이트 처리)
+  const codePreview = document.querySelector('#practice-code-preview')
+  if (codePreview) {
+    codePreview.innerHTML = codeLines.map((line, idx) => {
+      const lineNum = idx + 1
+      const isActive = currentStep && currentStep.lineNum === lineNum
+      const isExecuted = practiceTrace.slice(0, practiceTraceIndex).some(t => t.lineNum === lineNum)
+      let className = 'code-line'
+      if (isActive) className += ' active'
+      else if (isExecuted) className += ' executed'
+      return `<div class="${className}">
+        <span class="code-lno">${lineNum.toString().padStart(2, '0')}</span>
+        <span class="code-text">${highlightPython(line) || '&nbsp;'}</span>
+      </div>`
+    }).join('')
+  }
+
+  // 변수 표시 업데이트
+  const variablesDisplay = document.querySelector('#practice-variables-display')
+  if (variablesDisplay) {
+    const vars = currentStep?.variables || {}
+    if (Object.keys(vars).length > 0) {
+      variablesDisplay.innerHTML = Object.entries(vars).map(([k, v]) => 
+        `<div class="var-row"><span class="var-name">${k}</span><span class="var-value">${v}</span></div>`
+      ).join('')
+    } else {
+      variablesDisplay.innerHTML = '<p class="muted">변수 변화 없음</p>'
+    }
+  }
+
+  // 출력 표시 업데이트 (현재 단계까지의 출력만)
+  const outputDisplay = document.querySelector('#practice-output-display')
+  if (outputDisplay) {
+    let fullOutput = ''
+    let currentLine = ''
+    for (let i = 0; i <= practiceTraceIndex; i++) {
+      const step = practiceTrace[i]
+      if (step.output !== null && step.output !== undefined) {
+        currentLine += step.output
+        if (step.endChar === '\n' || step.endChar === undefined) {
+          fullOutput += currentLine + '\n'
+          currentLine = ''
+        } else {
+          currentLine += step.endChar
+        }
+      }
+    }
+    if (currentLine) fullOutput += currentLine
+    outputDisplay.textContent = fullOutput.trim() || '(아직 출력 없음)'
+  }
+
+  // 버튼 상태 업데이트
+  const firstBtn = document.querySelector('#trace-first')
+  const prevBtn = document.querySelector('#trace-prev')
+  const nextBtn = document.querySelector('#trace-next')
+  const lastBtn = document.querySelector('#trace-last')
+  const counter = document.querySelector('.trace-counter')
+
+  const isFirst = practiceTraceIndex === 0
+  const isLast = practiceTraceIndex >= practiceTrace.length - 1
+
+  if (firstBtn) firstBtn.disabled = isFirst
+  if (prevBtn) prevBtn.disabled = isFirst
+  if (nextBtn) nextBtn.disabled = isLast
+  if (lastBtn) lastBtn.disabled = isLast
+  if (counter) counter.textContent = `${practiceTraceIndex + 1} / ${practiceTrace.length}`
+}
+
+// 자동 채점 기능
+const gradePracticeCode = async (code, problem) => {
+  const grading = problem.grading
+  let score = 0
+  let maxScore = 100
+  const feedback = []
+
+  // 1. 출력 결과 비교
+  try {
+    if (typeof window.Sk === 'undefined') {
+      feedback.push({ type: 'error', message: '❌ Skulpt가 로드되지 않았습니다.' })
+    } else {
+      const Sk = window.Sk
+      let output = ''
+      const capturedOutput = []
+      
+      // Skulpt로 실행하여 출력 캡처
+      Sk.configure({
+        output: (text) => {
+          capturedOutput.push(text)
+        },
+        read: (x) => {
+          if (Sk.builtinFiles && Sk.builtinFiles.files && Sk.builtinFiles.files[x]) {
+            return Sk.builtinFiles.files[x]
+          }
+          throw 'File not found: \'' + x + '\''
+        }
+      })
+
+      try {
+        const compiled = Sk.importMainWithBody('<stdin>', false, code)
+        if (compiled && compiled.then) {
+          await compiled
+        }
+        output = capturedOutput.join('').trim()
+      } catch (err) {
+        // 실행 오류 처리
+        let errorMsg = ''
+        if (err.traceback) {
+          errorMsg = err.traceback
+        } else if (err.toString) {
+          errorMsg = err.toString()
+        } else {
+          errorMsg = String(err)
+        }
+        feedback.push({ type: 'error', message: `❌ 코드 실행 오류: ${errorMsg}` })
+      }
+
+      // 출력 비교
+      if (grading.output && grading.output.length > 0) {
+        const expectedOutput = grading.output.join('\n').trim()
+        const actualOutput = output.trim()
+        
+        if (actualOutput === expectedOutput) {
+          score += 50
+          feedback.push({ type: 'success', message: '✅ 출력 결과가 정확합니다!' })
+        } else if (actualOutput) {
+          // 부분 일치 확인
+          const expectedLines = expectedOutput.split('\n')
+          const actualLines = actualOutput.split('\n')
+          let matchedLines = 0
+          for (let i = 0; i < Math.min(expectedLines.length, actualLines.length); i++) {
+            if (expectedLines[i].trim() === actualLines[i].trim()) {
+              matchedLines++
+            }
+          }
+          if (matchedLines > 0) {
+            score += Math.round((matchedLines / expectedLines.length) * 30)
+            feedback.push({ 
+              type: 'partial', 
+              message: `⚠️ 출력 결과가 부분적으로 일치합니다. (${matchedLines}/${expectedLines.length}줄 일치)` 
+            })
+          } else {
+            feedback.push({ 
+              type: 'error', 
+              message: `❌ 출력 결과가 예상과 다릅니다.\n예상: ${expectedOutput}\n실제: ${actualOutput}` 
+            })
+          }
+        } else {
+          feedback.push({ 
+            type: 'error', 
+            message: '❌ 출력이 없습니다. 코드가 제대로 실행되었는지 확인해주세요.' 
+          })
+        }
+      }
+    }
+  } catch (err) {
+    feedback.push({ type: 'error', message: `❌ 코드 실행 중 오류가 발생했습니다: ${err.message || err}` })
+  }
+
+  // 2. 문법 요소 사용 여부
+  const requiredKeywords = grading.requiredKeywords || []
+  let keywordScore = 0
+  const keywordMaxScore = 30
+  const keywordScorePerItem = keywordMaxScore / requiredKeywords.length
+
+  requiredKeywords.forEach(keyword => {
+    if (code.includes(keyword)) {
+      keywordScore += keywordScorePerItem
+      feedback.push({ type: 'success', message: `✅ ${keyword} 사용 확인` })
+    } else {
+      feedback.push({ type: 'warning', message: `⚠️ ${keyword} 사용이 필요합니다` })
+    }
+  })
+
+  score += Math.round(keywordScore)
+
+  // 3. break/continue 필수 여부
+  if (grading.mustHaveBreak && !code.includes('break')) {
+    feedback.push({ type: 'warning', message: '⚠️ break를 사용해야 합니다' })
+    score = Math.max(0, score - 10)
+  }
+  if (grading.mustHaveContinue && !code.includes('continue')) {
+    feedback.push({ type: 'warning', message: '⚠️ continue를 사용해야 합니다' })
+    score = Math.max(0, score - 10)
+  }
+
+  // 4. 실행 흐름 기반 채점 (반복 횟수)
+  if (practiceTrace.length > 0 && grading.expectedIterations) {
+    const actualIterations = practiceTrace.filter(t => t.type === 'for' || t.type === 'while').length
+    if (actualIterations === grading.expectedIterations) {
+      score += 20
+      feedback.push({ type: 'success', message: `✅ 반복 횟수가 정확합니다 (${actualIterations}회)` })
+    } else {
+      const iterationScore = Math.round((1 - Math.abs(actualIterations - grading.expectedIterations) / grading.expectedIterations) * 20)
+      score += Math.max(0, iterationScore)
+      feedback.push({ 
+        type: 'partial', 
+        message: `⚠️ 반복 횟수: 예상 ${grading.expectedIterations}회, 실제 ${actualIterations}회` 
+      })
+    }
+  }
+
+  score = Math.min(100, Math.max(0, score))
+
+  return {
+    score,
+    maxScore,
+    feedback,
+    grade: score >= 80 ? 'excellent' : score >= 60 ? 'good' : score >= 40 ? 'fair' : 'poor'
+  }
+}
+
+// 문제 페이지 이벤트 핸들러
+const attachPracticeEvents = () => {
+  // 난이도 선택
+  const difficultyCards = document.querySelectorAll('.difficulty-card')
+  difficultyCards.forEach(card => {
+    card.addEventListener('click', () => {
+      practiceDifficulty = card.dataset.difficulty
+      currentProblemIndex = -1
+      practiceCode = ''
+      practiceTrace = []
+      practiceTraceIndex = 0
+      practiceHintVisible = false
+      renderApp()
+    })
+  })
+
+  // 난이도 선택으로 돌아가기
+  const backDifficultyBtn = document.querySelector('#practice-back-difficulty')
+  if (backDifficultyBtn) {
+    backDifficultyBtn.addEventListener('click', () => {
+      practiceDifficulty = null
+      currentProblemIndex = -1
+      practiceCode = ''
+      practiceTrace = []
+      practiceTraceIndex = 0
+      practiceHintVisible = false
+      renderApp()
+    })
+  }
+
+  // 문제 목록으로 돌아가기
+  const backListBtn = document.querySelector('#practice-back-list')
+  if (backListBtn) {
+    backListBtn.addEventListener('click', () => {
+      currentProblemIndex = -1
+      practiceCode = ''
+      practiceTrace = []
+      practiceTraceIndex = 0
+      practiceHintVisible = false
+      renderApp()
+    })
+  }
+
+  // 문제 시작 버튼
+  const problemStartBtns = document.querySelectorAll('.problem-start-btn')
+  problemStartBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      currentProblemIndex = parseInt(btn.dataset.problemIndex)
+      const problem = practiceProblemList[currentProblemIndex]
+      practiceCode = problem.skeleton
+      practiceTrace = []
+      practiceTraceIndex = 0
+      practiceHintVisible = false
+      renderApp()
+    })
+  })
+
+  // 이전/다음 문제 이동
+  const prevProblemBtn = document.querySelector('#prev-problem')
+  const nextProblemBtn = document.querySelector('#next-problem')
+  
+  if (prevProblemBtn) {
+    prevProblemBtn.addEventListener('click', () => {
+      if (currentProblemIndex > 0) {
+        currentProblemIndex--
+        const problem = practiceProblemList[currentProblemIndex]
+        practiceCode = problem.skeleton
+        practiceTrace = []
+        practiceTraceIndex = 0
+        practiceHintVisible = false
+        renderApp()
+      }
+    })
+  }
+
+  if (nextProblemBtn) {
+    nextProblemBtn.addEventListener('click', () => {
+      if (currentProblemIndex < practiceProblemList.length - 1) {
+        currentProblemIndex++
+        const problem = practiceProblemList[currentProblemIndex]
+        practiceCode = problem.skeleton
+        practiceTrace = []
+        practiceTraceIndex = 0
+        practiceHintVisible = false
+        renderApp()
+      }
+    })
+  }
+
+  // 힌트 토글
+  const hintToggleBtn = document.querySelector('#hint-toggle')
+  if (hintToggleBtn) {
+    hintToggleBtn.addEventListener('click', () => {
+      practiceHintVisible = !practiceHintVisible
+      renderApp()
+    })
+  }
+
+  // ACE Editor 초기화 (문제 해결 화면에서만)
+  if (currentProblemIndex >= 0) {
+    const editorHost = document.querySelector('#practice-code-editor')
+    if (editorHost && typeof ace !== 'undefined') {
+      if (!practiceEditor || practiceEditor.container !== editorHost) {
+        if (practiceEditor) {
+          practiceEditor.destroy()
+        }
+        practiceEditor = ace.edit(editorHost)
+        practiceEditor.setTheme('ace/theme/monokai')
+        practiceEditor.session.setMode('ace/mode/python')
+        practiceEditor.setValue(practiceCode || '')
+        practiceEditor.setOptions({
+          fontSize: 16,
+          fontFamily: 'Consolas, Monaco, monospace',
+          tabSize: 4,
+          useSoftTabs: true,
+          wrap: true,
+          showPrintMargin: false,
+          readOnly: false
+        })
+      } else {
+        practiceEditor.setValue(practiceCode || '')
+      }
+    }
+
+    // trace가 있으면 UI 업데이트
+    if (practiceTrace.length > 0) {
+      setTimeout(() => {
+        updatePracticeTraceUI()
+      }, 100)
+    }
+  }
+
+  // 코드 실행 버튼 (실행 결과만 표시)
+  const runCodeBtn = document.querySelector('#practice-run-code')
+  if (runCodeBtn) {
+    runCodeBtn.addEventListener('click', () => {
+      const code = practiceEditor ? practiceEditor.getValue() : (document.querySelector('#practice-code-editor textarea')?.value || '')
+      practiceCode = code
+      
+      // 출력 영역에 상태 표시
+      const outputDisplay = document.querySelector('#practice-output-display')
+      if (outputDisplay) {
+        outputDisplay.textContent = '실행 중...'
+      }
+
+      // Skulpt 체크
+      if (typeof window.Sk === 'undefined') {
+        if (outputDisplay) {
+          outputDisplay.textContent = '❌ Skulpt가 로드되지 않았습니다. 페이지를 새로고침해 주세요.'
+        }
+        return
+      }
+
+      const Sk = window.Sk
+      let outputText = ''
+
+      Sk.configure({
+        output: (text) => {
+          outputText += text
+        },
+        read: (x) => {
+          if (Sk.builtinFiles && Sk.builtinFiles.files && Sk.builtinFiles.files[x]) {
+            return Sk.builtinFiles.files[x]
+          }
+          throw 'File not found: \'' + x + '\''
+        }
+      })
+
+      try {
+        const compiled = Sk.importMainWithBody('<stdin>', false, code)
+        
+        if (compiled && compiled.then) {
+          // Promise인 경우
+          compiled.then(() => {
+            const displayEl = document.querySelector('#practice-output-display')
+            if (displayEl) {
+              if (outputText.trim()) {
+                displayEl.textContent = outputText
+              } else {
+                displayEl.textContent = '(출력 없음)'
+              }
+            }
+          }).catch((err) => {
+            let errorMsg = ''
+            if (err.traceback) {
+              errorMsg = err.traceback
+            } else if (err.toString) {
+              errorMsg = err.toString()
+            } else {
+              errorMsg = String(err)
+            }
+            const displayEl = document.querySelector('#practice-output-display')
+            if (displayEl) {
+              displayEl.textContent = `오류: ${errorMsg}`
+            }
+          })
+        } else {
+          // 동기 실행인 경우
+          const displayEl = document.querySelector('#practice-output-display')
+          if (displayEl) {
+            if (outputText.trim()) {
+              displayEl.textContent = outputText
+            } else {
+              displayEl.textContent = '(출력 없음)'
+            }
+          }
+        }
+      } catch (err) {
+        let errorMsg = ''
+        if (err.traceback) {
+          errorMsg = err.traceback
+        } else if (err.toString) {
+          errorMsg = err.toString()
+        } else {
+          errorMsg = String(err)
+        }
+        const displayEl = document.querySelector('#practice-output-display')
+        if (displayEl) {
+          displayEl.textContent = `오류: ${errorMsg}`
+        }
+      }
+    })
+  }
+
+  // 실행 흐름 보기 버튼 (단계별 하이라이트)
+  const traceCodeBtn = document.querySelector('#practice-trace-code')
+  if (traceCodeBtn) {
+    traceCodeBtn.addEventListener('click', () => {
+      const code = practiceEditor ? practiceEditor.getValue() : (document.querySelector('#practice-code-editor textarea')?.value || '')
+      practiceCode = code
+
+      // 문법 검사
+      const syntaxCheck = checkPythonSyntax(code)
+      if (!syntaxCheck.valid) {
+        alert(`문법 오류: ${syntaxCheck.error}`)
+        return
+      }
+
+      // fakeInterpreter로 trace 생성
+      const result = fakeInterpreter(code)
+      if (result && result.trace) {
+        practiceTrace = result.trace
+        practiceTraceIndex = 0
+        renderApp() // trace가 생성되었으므로 UI 업데이트
+      }
+    })
+  }
+
+  // 코드 초기화 버튼
+  const resetCodeBtn = document.querySelector('#practice-reset-code')
+  if (resetCodeBtn) {
+    resetCodeBtn.addEventListener('click', () => {
+      const problem = practiceProblemList[currentProblemIndex]
+      practiceCode = problem.skeleton
+      practiceTrace = []
+      practiceTraceIndex = 0
+      if (practiceEditor) {
+        practiceEditor.setValue(practiceCode)
+      }
+      renderApp()
+    })
+  }
+
+  // 실행 흐름 네비게이션 버튼
+  const traceFirstBtn = document.querySelector('#trace-first')
+  const tracePrevBtn = document.querySelector('#trace-prev')
+  const traceNextBtn = document.querySelector('#trace-next')
+  const traceLastBtn = document.querySelector('#trace-last')
+
+  if (traceFirstBtn) {
+    traceFirstBtn.addEventListener('click', () => {
+      practiceTraceIndex = 0
+      updatePracticeTraceUI()
+    })
+  }
+
+  if (tracePrevBtn) {
+    tracePrevBtn.addEventListener('click', () => {
+      if (practiceTraceIndex > 0) {
+        practiceTraceIndex--
+        updatePracticeTraceUI()
+      }
+    })
+  }
+
+  if (traceNextBtn) {
+    traceNextBtn.addEventListener('click', () => {
+      if (practiceTraceIndex < practiceTrace.length - 1) {
+        practiceTraceIndex++
+        updatePracticeTraceUI()
+      }
+    })
+  }
+
+  if (traceLastBtn) {
+    traceLastBtn.addEventListener('click', () => {
+      practiceTraceIndex = practiceTrace.length - 1
+      updatePracticeTraceUI()
+    })
+  }
+
+  // 채점 버튼
+  const gradeBtn = document.querySelector('#practice-grade-code')
+  if (gradeBtn) {
+    gradeBtn.addEventListener('click', async () => {
+      const code = practiceEditor ? practiceEditor.getValue() : (document.querySelector('#practice-code-editor textarea')?.value || '')
+      const problem = practiceProblemList[currentProblemIndex]
+      
+      if (!code || !code.trim()) {
+        alert('코드를 작성해주세요!')
+        return
+      }
+
+      // 문법 검사
+      const syntaxCheck = checkPythonSyntax(code)
+      if (!syntaxCheck.valid) {
+        alert(`문법 오류: ${syntaxCheck.error}`)
+        return
+      }
+
+      // 실행 흐름이 없으면 먼저 생성
+      if (practiceTrace.length === 0) {
+        const result = fakeInterpreter(code)
+        if (result && result.trace) {
+          practiceTrace = result.trace
+        }
+      }
+
+      // 채점 실행
+      const gradingResult = await gradePracticeCode(code, problem)
+      
+      // 채점 결과 표시
+      const gradingSection = document.querySelector('#grading-section')
+      const gradingResultEl = document.querySelector('#grading-result')
+      
+      if (gradingSection && gradingResultEl) {
+        gradingSection.style.display = 'block'
+        
+        const gradeEmoji = gradingResult.grade === 'excellent' ? '🌟' : 
+                          gradingResult.grade === 'good' ? '👍' : 
+                          gradingResult.grade === 'fair' ? '👌' : '💪'
+        
+        gradingResultEl.innerHTML = `
+          <div class="grading-score">
+            <div class="score-display ${gradingResult.grade}">
+              ${gradeEmoji} ${gradingResult.score}점 / ${gradingResult.maxScore}점
+            </div>
+          </div>
+          <div class="grading-feedback">
+            <h4>📝 상세 피드백:</h4>
+            <ul class="feedback-list">
+              ${gradingResult.feedback.map(f => `
+                <li class="feedback-item ${f.type}">${f.message}</li>
+              `).join('')}
+            </ul>
+          </div>
+        `
+        
+        // 채점 결과 영역으로 스크롤
+        gradingSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+      }
+    })
+  }
 }
 
 // ============================================
@@ -3522,7 +4388,7 @@ const renderProjectPage = () => {
           </ul>
         </div>
         
-<!-- 코드 작성 영역 -->
+        <!-- 코드 작성 영역 -->
         <div class="code-section">
           <div class="card-label">💻 코드 작성</div>
           <textarea id="project-code" class="project-code-editor" spellcheck="false" placeholder="여기에 코드를 작성하세요...">${projectCode || p.starterCode.replace(/\\n/g, '\n')}</textarea>
@@ -3530,10 +4396,19 @@ const renderProjectPage = () => {
             <button class="btn ${projectShowTrace ? 'ghost' : 'primary'}" id="run-project">
               ${projectShowTrace ? '📝 코드 수정하기' : '🔍 실행 흐름 보기'}
             </button>
+            <button class="btn secondary" id="project-run-code">▶ 코드 실행</button>
             <button class="btn ghost" id="reset-code">🔄 초기화</button>
           </div>
         </div>
-        
+
+        <!-- 실행 결과 출력 영역 -->
+        <div class="project-output-section">
+          <div class="card-label">💬 실행 결과</div>
+          <pre id="project-output" class="project-code-view">
+여기에 실행 결과가 표시됩니다.
+          </pre>
+        </div>
+
         ${projectShowTrace ? renderProjectTraceSection() : ''}
 
         <!-- 규칙 설명 입력 -->
@@ -4119,7 +4994,7 @@ const renderApp = () => {
   }
 
   app.innerHTML = `
-    <div class="app-container">
+    <div class="app-container ${layoutMode === 'desktop' ? 'desktop-layout' : 'mobile-layout'}">
       <div class="background-decorations">
         <div class="floating-shape shape-1">🌟</div>
         <div class="floating-shape shape-2">💫</div>
@@ -4132,6 +5007,7 @@ const renderApp = () => {
         ${pageContent}
     </main>
       ${renderMiniEditor()}
+      ${renderLayoutSelector()}
     </div>
   `
 
@@ -4260,8 +5136,15 @@ const attachIntroEvents = () => {
       }
 
       studentInfo = { klass, number, name }
+      try {
+        localStorage.setItem('gimal_student_info', JSON.stringify(studentInfo))
+      } catch (e) {
+        console.warn('학생 정보 저장 실패:', e)
+      }
       currentPage = 'concept'
       renderApp()
+      // 상단 메뉴까지 함께 보이도록 화면을 맨 위로 스크롤
+      window.scrollTo({ top: 0, behavior: 'smooth' })
     })
   }
 }
@@ -4545,6 +5428,16 @@ const attachEvents = () => {
       } finally {
         window.location.href = '/student.html'
       }
+    })
+  }
+
+  // 레이아웃 모드 선택기 (왼쪽 아래)
+  const layoutModeSelect = document.querySelector('#layout-mode-select')
+  if (layoutModeSelect) {
+    layoutModeSelect.addEventListener('change', (e) => {
+      layoutMode = e.target.value
+      localStorage.setItem('layoutMode', layoutMode)
+      renderApp()
     })
   }
   
@@ -5410,6 +6303,11 @@ if (runExperimentBtn) {
 
         const scoreTextEl = document.querySelector('#quiz-score-text')
         const scoreMsgEl = document.querySelector('#quiz-score-message')
+        const submitBtn = document.querySelector('#quiz-submit-btn')
+
+        // 점수 업데이트
+        quizScore.correctCount = correctCount
+        quizScore.totalCount = total
 
         if (scoreTextEl) {
           scoreTextEl.textContent = `지금까지 맞힌 개수: ${correctCount} / ${total}`
@@ -5430,12 +6328,63 @@ if (runExperimentBtn) {
             }
           }
         }
+
+        // 모든 문제를 풀었으면 제출 버튼 표시
+        if (submitBtn && answered === total && !quizScore.submitted) {
+          submitBtn.style.display = 'block'
+        }
       })
     })
+
+    // 퀴즈 제출 버튼
+    const quizSubmitBtn = document.querySelector('#quiz-submit-btn')
+    if (quizSubmitBtn) {
+      quizSubmitBtn.addEventListener('click', async () => {
+        if (quizScore.submitted) {
+          alert('이미 제출하셨습니다.')
+          return
+        }
+
+        try {
+          const user = firebaseUser
+          if (!user) {
+            alert('로그인이 필요합니다.')
+            return
+          }
+
+          // Firestore에 퀴즈 점수 저장
+          if (db) {
+            await addDoc(collection(db, 'quizScores'), {
+              studentClass: studentInfo.klass || null,
+              studentNumber: studentInfo.number || null,
+              studentName: studentInfo.name || (firebaseUser?.displayName ?? null),
+              email: firebaseUser?.email ?? null,
+              correctCount: quizScore.correctCount,
+              totalCount: quizScore.totalCount,
+              score: Math.round((quizScore.correctCount / quizScore.totalCount) * 100),
+              createdAt: serverTimestamp()
+            })
+          }
+
+          quizScore.submitted = true
+          quizSubmitBtn.textContent = '✅ 제출 완료'
+          quizSubmitBtn.disabled = true
+          alert(`퀴즈 제출이 완료되었습니다! (${quizScore.correctCount}/${quizScore.totalCount} 정답)`)
+        } catch (err) {
+          console.error('퀴즈 제출 중 오류:', err)
+          alert('제출 중 오류가 발생했어요. 잠시 후 다시 시도해 주세요.')
+        }
+      })
+    }
   }
 
   // 문제 페이지 이벤트
   if (currentPage === 'practice') {
+    // 문제 페이지 이벤트 핸들러
+    if (currentPage === 'practice') {
+      attachPracticeEvents()
+    }
+
     const practiceBtns = document.querySelectorAll('.practice-btn')
     practiceBtns.forEach(btn => {
       btn.addEventListener('click', () => {
@@ -5528,8 +6477,57 @@ if (runExperimentBtn) {
         projectRuleExplanation = ruleInput.value
       })
     }
-    
-// 실행 흐름 보기/수정하기 토글 버튼
+
+    // 프로젝트 코드 실행 버튼 (실행 결과만 보기)
+    const projectRunCodeBtn = document.querySelector('#project-run-code')
+    if (projectRunCodeBtn) {
+      projectRunCodeBtn.addEventListener('click', async () => {
+        const codeInputEl = document.querySelector('#project-code')
+        const outputEl = document.querySelector('#project-output')
+        if (!codeInputEl || !outputEl) return
+
+        const code = codeInputEl.value || ''
+        if (!code.trim()) {
+          outputEl.textContent = '코드를 입력해 주세요.'
+          return
+        }
+
+        outputEl.textContent = '실행 중...'
+
+        try {
+          if (typeof window.Sk === 'undefined') {
+            outputEl.textContent = '❌ Skulpt가 로드되지 않았습니다. 페이지를 새로고침해 주세요.'
+            return
+          }
+
+          const Sk = window.Sk
+          let outputText = ''
+
+          Sk.configure({
+            output: (text) => {
+              outputText += text
+            },
+            read: (x) => {
+              if (Sk.builtinFiles && Sk.builtinFiles.files && Sk.builtinFiles.files[x]) {
+                return Sk.builtinFiles.files[x]
+              }
+              throw 'File not found: ' + x
+            }
+          })
+
+          const compiled = Sk.importMainWithBody('<stdin>', false, code)
+          if (compiled && compiled.then) {
+            await compiled
+          }
+
+          outputEl.textContent = outputText.trim() || '(출력 없음)'
+        } catch (err) {
+          outputEl.textContent = `오류: ${err.toString()}`
+        }
+      })
+    }
+
+    // 실행 흐름 보기/수정하기 토글 버튼
     const runBtn = document.querySelector('#run-project')
     if (runBtn) {
       runBtn.addEventListener('click', () => {
@@ -5623,7 +6621,7 @@ if (runExperimentBtn) {
 
   // 실행 흐름 페이지 (ACE Editor + Skulpt 방식)
   if (currentPage === 'trace') {
-    const resetBtn = document.querySelector('#btn-reset')
+  const resetBtn = document.querySelector('#btn-reset')
     const runPythonBtn = document.querySelector('#btn-run-python')
     const stepStartBtn = document.querySelector('#btn-step-start')
     const editorHost = document.querySelector('#code-editor')
@@ -5668,8 +6666,8 @@ if (runExperimentBtn) {
     }
 
     // 예제 불러오기
-    if (resetBtn) {
-      resetBtn.addEventListener('click', () => {
+  if (resetBtn) {
+    resetBtn.addEventListener('click', () => {
         pythonCode = starterCode
         pythonStepMode = false
         pythonStepIndex = -1
@@ -5745,7 +6743,7 @@ if (runExperimentBtn) {
               if (runOutput) {
                 if (outputText.trim()) {
                   runOutput.textContent = outputText
-                } else {
+        } else {
                   runOutput.textContent = '(출력 없음)'
                 }
               }
@@ -5770,8 +6768,8 @@ if (runExperimentBtn) {
                 runOutput.textContent = '(출력 없음)'
               }
             }
-          }
-        } catch (err) {
+        }
+      } catch (err) {
           let errorMsg = ''
           if (err.traceback) {
             errorMsg = err.traceback.toString()
@@ -6224,18 +7222,34 @@ if (runExperimentBtn) {
           const projectElapsedMs = projectStartTime && projectSubmitTime ? (projectSubmitTime - projectStartTime) : null
           const reflectionElapsedMs = reflectionStartTime ? (now - reflectionStartTime) : null
 
-          // 프로젝트 코드 Storage에 업로드
-          let projectPath = null
-          if (projectCode && user) {
-            const safeLevel = projectLevel || 'unknown'
-            const fileName = `project_${safeLevel}_${now}.py`
-            const path = `studentProjects/${user.uid}/${fileName}`
-            const ref = storageRef(storage, path)
-            await uploadString(ref, projectCode, 'raw', { contentType: 'text/x-python' })
-            projectPath = path
+          // 그림을 JPG로 변환하여 Storage에 저장
+          let drawingUrl = null
+          const canvas = document.querySelector('#reflection-canvas')
+          if (canvas) {
+            try {
+              // canvas를 JPG로 변환 (quality: 0.9)
+              const dataURL = canvas.toDataURL('image/jpeg', 0.9)
+              
+              // base64를 blob으로 변환
+              const response = await fetch(dataURL)
+              const blob = await response.blob()
+              
+              // Storage에 업로드
+              if (user && blob.size > 0) {
+                const fileName = `drawings/${user.uid}/${now}.jpg`
+                const ref = storageRef(storage, fileName)
+                await uploadBytes(ref, blob, { contentType: 'image/jpeg' })
+                
+                // 다운로드 URL 생성 (필요시)
+                // drawingUrl = await getDownloadURL(ref)
+                drawingUrl = fileName // 경로 저장
+              }
+            } catch (drawErr) {
+              console.warn('그림 저장 실패 (무시됨):', drawErr)
+            }
           }
 
-          // Firestore에 성찰 데이터 저장
+          // Firestore에 성찰 데이터 저장 (프로젝트 코드는 문자열로 직접 저장)
           if (db) {
             await addDoc(collection(db, 'reflections'), {
               studentClass: studentInfo.klass || null,
@@ -6246,7 +7260,12 @@ if (runExperimentBtn) {
               projectElapsedMs,
               reflectionElapsedMs,
               chatMessages,
-              projectCodePath: projectPath,
+              // 프로젝트 코드를 문자열로 직접 저장 (UTF-8, 한글 주석 보존)
+              projectCode: projectCode || null,
+              // 프로젝트 규칙 설명 저장
+              projectRuleExplanation: projectRuleExplanation || null,
+              // 그림 URL 저장
+              drawingUrl: drawingUrl,
               createdAt: serverTimestamp()
             })
           }

@@ -21,8 +21,25 @@ const updateUIForUser = (user) => {
     const displayName = user.displayName || '익명 사용자'
     const email = user.email || ''
 
+    // 저장된 학생 정보 불러오기 (있을 경우)
+    let studentLine = ''
+    try {
+      const saved = localStorage.getItem('gimal_student_info')
+      if (saved) {
+        const info = JSON.parse(saved)
+        if (info && info.klass && info.number && info.name) {
+          studentLine = `${info.klass} ${info.number}번 ${info.name}`
+        }
+      }
+    } catch (e) {
+      console.warn('저장된 학생 정보를 불러오는 데 실패했습니다:', e)
+    }
+
     loginBtn.textContent = 'Google 로그아웃'
-    userInfoEl.textContent = `${displayName}${email ? ' (' + email + ')' : ''}`
+    const baseText = `${displayName}${email ? ' (' + email + ')' : ''}`
+    userInfoEl.innerHTML = studentLine
+      ? `${baseText}<br><span class="student-meta">${studentLine}</span>`
+      : baseText
     userInfoEl.style.display = 'block'
     entryLinksEl.style.display = 'flex'
     if (teacherLinkEl) {

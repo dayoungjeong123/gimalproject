@@ -28,3 +28,7 @@
 # 방법 3: Smart Detection 비활성화
 #   Site settings > Build & deploy > Environment variables
 #   SECRETS_SCAN_SMART_DETECTION_ENABLED = false
+
+
+
+

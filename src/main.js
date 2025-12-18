@@ -59,6 +59,14 @@ let practiceEditor = null // ACE Editor 인스턴스 (문제 페이지용)
 let practiceHintVisible = false
 
 // ============================================
+// 📝 퀴즈 상태 관리
+// ============================================
+let quizScore = {
+  correctCount: 0,
+  totalCount: 0
+}
+
+// ============================================
 // 🔑 OpenAI API 키 (환경변수에서 가져오기)
 // ============================================
 const OPENAI_API_KEY = import.meta.env.VITE_OPENAI_API_KEY || ''
@@ -1706,9 +1714,6 @@ const renderStep6Quiz = () => `
     <div class="quiz-summary">
       <div id="quiz-score-text">지금까지 맞힌 개수: 0 / 3</div>
       <div id="quiz-score-message">문제를 풀면서 개념을 정리해 보세요.</div>
-      <button class="btn primary" id="quiz-submit-btn" style="margin-top: 1rem; display: none;">
-        📤 퀴즈 제출하기
-      </button>
     </div>
   </div>
 `
@@ -5810,6 +5815,7 @@ const attachEvents = () => {
       step.addEventListener('click', () => {
         conceptStep = parseInt(step.dataset.step)
         renderApp()
+        window.scrollTo({ top: 0, behavior: 'smooth' })
       })
     })
     
@@ -5820,6 +5826,10 @@ const attachEvents = () => {
         if (conceptStep > 0) {
           conceptStep--
           renderApp()
+          // 렌더링 완료 후 스크롤
+          setTimeout(() => {
+            window.scrollTo({ top: 0, behavior: 'smooth' })
+          }, 50)
         }
       })
     }
@@ -5833,9 +5843,17 @@ const attachEvents = () => {
           currentPage = 'trace'
           conceptStep = 0
           renderApp()
+          // 렌더링 완료 후 스크롤
+          setTimeout(() => {
+            window.scrollTo({ top: 0, behavior: 'smooth' })
+          }, 50)
         } else {
           conceptStep++
           renderApp()
+          // 렌더링 완료 후 스크롤
+          setTimeout(() => {
+            window.scrollTo({ top: 0, behavior: 'smooth' })
+          }, 50)
         }
       })
     }
@@ -6345,6 +6363,54 @@ if (runExperimentBtn) {
     }
 
     // 퀴즈 이벤트 핸들러
+    // 퀴즈 페이지 렌더링 시 저장된 점수 상태를 UI에 반영
+    const scoreTextEl = document.querySelector('#quiz-score-text')
+    const scoreMsgEl = document.querySelector('#quiz-score-message')
+    const cards = document.querySelectorAll('.quiz-card')
+    const total = cards.length
+    
+    // quizScore 초기화 (총 문제 수 설정)
+    if (quizScore.totalCount === 0) {
+      quizScore.totalCount = total
+    }
+    
+    // 이미 답변한 문제들의 상태를 복원하고 점수 계산
+    let answered = 0
+    let correctCount = 0
+    cards.forEach(card => {
+      if (card.classList.contains('answered')) {
+        answered++
+        const userCorrect = card.dataset.userCorrect === 'true'
+        if (userCorrect) {
+          correctCount++
+        }
+      }
+    })
+    
+    // 저장된 quizScore와 현재 상태를 동기화
+    if (answered > 0) {
+      quizScore.correctCount = correctCount
+    }
+    
+    // UI 업데이트
+    if (scoreTextEl) {
+      scoreTextEl.textContent = `지금까지 맞힌 개수: ${quizScore.correctCount} / ${quizScore.totalCount}`
+    }
+    
+    if (scoreMsgEl && answered > 0) {
+      if (answered < total) {
+        scoreMsgEl.textContent = `${quizScore.correctCount}문제 맞았어요! 나머지도 도전해 볼까요?`
+      } else {
+        if (quizScore.correctCount === total) {
+          scoreMsgEl.textContent = '🎉 3/3 정답! 잘했어요! 반복문 개념이 아주 탄탄해요.'
+        } else if (quizScore.correctCount === 2) {
+          scoreMsgEl.textContent = '👍 2문제 정답! 한 문제만 다시 복습해 보면 더 완벽해요.'
+        } else {
+          scoreMsgEl.textContent = '괜찮아요! 틀린 문제를 다시 보면서 개념을 한 번 더 정리해 봅시다.'
+        }
+      }
+    }
+    
     const quizOptions = document.querySelectorAll('.quiz-option')
     quizOptions.forEach(option => {
       option.addEventListener('click', () => {
@@ -6407,7 +6473,6 @@ if (runExperimentBtn) {
 
         const scoreTextEl = document.querySelector('#quiz-score-text')
         const scoreMsgEl = document.querySelector('#quiz-score-message')
-        const submitBtn = document.querySelector('#quiz-submit-btn')
 
         // 점수 업데이트
         quizScore.correctCount = correctCount
@@ -6432,54 +6497,9 @@ if (runExperimentBtn) {
             }
           }
         }
-
-        // 모든 문제를 풀었으면 제출 버튼 표시
-        if (submitBtn && answered === total && !quizScore.submitted) {
-          submitBtn.style.display = 'block'
-        }
       })
     })
 
-    // 퀴즈 제출 버튼
-    const quizSubmitBtn = document.querySelector('#quiz-submit-btn')
-    if (quizSubmitBtn) {
-      quizSubmitBtn.addEventListener('click', async () => {
-        if (quizScore.submitted) {
-          alert('이미 제출하셨습니다.')
-          return
-        }
-
-        try {
-          const user = firebaseUser
-          if (!user) {
-            alert('로그인이 필요합니다.')
-            return
-          }
-
-          // Firestore에 퀴즈 점수 저장
-          if (db) {
-            await addDoc(collection(db, 'quizScores'), {
-              studentClass: studentInfo.klass || null,
-              studentNumber: studentInfo.number || null,
-              studentName: studentInfo.name || (firebaseUser?.displayName ?? null),
-              email: firebaseUser?.email ?? null,
-              correctCount: quizScore.correctCount,
-              totalCount: quizScore.totalCount,
-              score: Math.round((quizScore.correctCount / quizScore.totalCount) * 100),
-              createdAt: serverTimestamp()
-            })
-          }
-
-          quizScore.submitted = true
-          quizSubmitBtn.textContent = '✅ 제출 완료'
-          quizSubmitBtn.disabled = true
-          alert(`퀴즈 제출이 완료되었습니다! (${quizScore.correctCount}/${quizScore.totalCount} 정답)`)
-        } catch (err) {
-          console.error('퀴즈 제출 중 오류:', err)
-          alert('제출 중 오류가 발생했어요. 잠시 후 다시 시도해 주세요.')
-        }
-      })
-    }
   }
 
   // 문제 페이지 이벤트

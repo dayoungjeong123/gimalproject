@@ -5522,8 +5522,15 @@ const attachEvents = () => {
     studentLogoutBtn.addEventListener('click', async () => {
       try {
         await signOut(auth)
+        // 세션 스토리지 정리
+        sessionStorage.removeItem('auth_verified')
+        sessionStorage.removeItem('auth_uid')
+        // 학생 정보는 유지 (다시 로그인했을 때 표시하기 위해)
+        // 필요시 학생 정보도 삭제하려면 아래 주석 해제:
+        // localStorage.removeItem('gimal_student_info')
       } finally {
-        window.location.href = '/student.html'
+        // 메인 페이지로 리다이렉트
+        window.location.href = '/'
       }
     })
   }

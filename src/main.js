@@ -533,6 +533,18 @@ const renderNavigation = () => {
           <div class="nav-user-info">
             <span class="user-name">${firebaseUser.displayName || '학생'}</span>
             ${firebaseUser.email ? `<span class="user-email">${firebaseUser.email}</span>` : ''}
+            ${(() => {
+              try {
+                const savedInfo = localStorage.getItem('gimal_student_info')
+                if (savedInfo) {
+                  const info = JSON.parse(savedInfo)
+                  if (info.klass && info.number && info.name) {
+                    return `<span class="student-meta">${info.klass}반 ${info.number}번 ${info.name}</span>`
+                  }
+                }
+              } catch (e) {}
+              return ''
+            })()}
           </div>
           <button class="btn mini ghost" id="student-logout-btn">로그아웃</button>
         ` : ''}
@@ -5042,6 +5054,19 @@ const renderMiniEditor = () => {
 
 const renderApp = () => {
   const app = document.querySelector('#app')
+  
+  // localStorage에서 학생 정보 로드
+  try {
+    const savedInfo = localStorage.getItem('gimal_student_info')
+    if (savedInfo) {
+      const info = JSON.parse(savedInfo)
+      if (info.klass && info.number && info.name) {
+        studentInfo = info
+      }
+    }
+  } catch (e) {
+    console.error('학생 정보 로드 실패:', e)
+  }
   
   if (currentPage === 'intro') {
     app.innerHTML = renderIntroPage()

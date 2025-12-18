@@ -533,9 +533,6 @@ const renderNavigation = () => {
           <div class="nav-user-info">
             <span class="user-name">${firebaseUser.displayName || '학생'}</span>
             ${firebaseUser.email ? `<span class="user-email">${firebaseUser.email}</span>` : ''}
-            ${(studentInfo.klass && studentInfo.number && studentInfo.name) ? `
-              <span class="user-student-meta">${studentInfo.klass}반 ${studentInfo.number}번 ${studentInfo.name}</span>
-            ` : ''}
           </div>
           <button class="btn mini ghost" id="student-logout-btn">로그아웃</button>
         ` : ''}
@@ -1751,6 +1748,428 @@ const fakeInterpreter = (code) => {
   let variables = {}
   let outputs = []
   
+  // 조건식 평가 헬퍼
+  const evalCondition = (condition, vars) => {
+    let expr = condition
+    // Python 비교연산자를 JS로 변환
+    expr = expr.replace(/\band\b/g, '&&')
+    expr = expr.replace(/\bor\b/g, '||')
+    expr = expr.replace(/\bnot\b/g, '!')
+    expr = expr.replace(/\bTrue\b/g, 'true')
+    expr = expr.replace(/\bFalse\b/g, 'false')
+    
+    // 변수 치환
+    for (const [vName, vVal] of Object.entries(vars)) {
+      const regex = new RegExp(`\\b${vName}\\b`, 'g')
+      expr = expr.replace(regex, typeof vVal === 'string' ? `"${vVal}"` : vVal)
+    }
+    
+    try {
+      return eval(expr)
+    } catch {
+      return false
+    }
+  }
+
+  // 표현식 평가 헬퍼
+  const evalExpr = (expr, vars) => {
+    let result = expr
+    for (const [vName, vVal] of Object.entries(vars)) {
+      const regex = new RegExp(`\\b${vName}\\b`, 'g')
+      result = result.replace(regex, vVal)
+    }
+    try {
+      return eval(result)
+    } catch {
+      return result
+    }
+  }
+
+  // print 처리 헬퍼
+  const handlePrint = (content, vars) => {
+    let printContent = content
+    let endChar = '\n'
+    let sepChar = ' '
+    
+    const endMatch = printContent.match(/,\s*end\s*=\s*["'](.*)["']/)
+    if (endMatch) {
+      endChar = endMatch[1]
+      printContent = printContent.replace(/,\s*end\s*=\s*["'].*["']/, '')
+    }
+    
+    const sepMatch = printContent.match(/,\s*sep\s*=\s*["'](.*)["']/)
+    if (sepMatch) {
+      sepChar = sepMatch[1]
+      printContent = printContent.replace(/,\s*sep\s*=\s*["'].*["']/, '')
+    }
+    
+    const args = printContent.split(/,\s*(?=(?:[^"']*["'][^"']*["'])*[^"']*$)/).filter(a => a.trim())
+    let outputParts = []
+    
+    for (let arg of args) {
+      arg = arg.trim()
+      
+      // 변수 치환
+      for (const [vName, vVal] of Object.entries(vars)) {
+        const regex = new RegExp(`\\b${vName}\\b`, 'g')
+        arg = arg.replace(regex, vVal)
+      }
+      
+      // f-string 처리
+      arg = arg.replace(/f["'](.+)["']/, (match, str) => {
+        return str.replace(/\{(\w+)\}/g, (m, v) => vars[v] !== undefined ? vars[v] : m)
+      })
+      
+      try {
+        if ((arg.startsWith('"') && arg.endsWith('"')) || (arg.startsWith("'") && arg.endsWith("'"))) {
+          outputParts.push(arg.slice(1, -1))
+        } else {
+          outputParts.push(eval(arg))
+        }
+      } catch {
+        outputParts.push(arg)
+      }
+    }
+    
+    return { text: outputParts.join(sepChar), endChar }
+  }
+
+  // 본문 실행 함수 (재귀적으로 중첩 구조 처리)
+  const executeBody = (bodyLines, loopInfo = null) => {
+    let shouldBreak = false
+    let shouldContinue = false
+    
+    for (let i = 0; i < bodyLines.length; i++) {
+      if (shouldBreak || shouldContinue) break
+      
+      const bodyItem = bodyLines[i]
+      const content = bodyItem.content
+      const indent = bodyItem.indent || 0
+      
+      // break 처리
+      if (content === 'break') {
+        stepNum++
+        trace.push({
+          step: stepNum,
+          lineNum: bodyItem.lineNum,
+          code: content,
+          variables: { ...variables },
+          output: null,
+          iteration: loopInfo?.iteration,
+          totalIterations: loopInfo?.total,
+          type: 'break',
+          description: `🛑 break - 반복문 탈출!`
+        })
+        shouldBreak = true
+        break
+      }
+      
+      // continue 처리
+      if (content === 'continue') {
+        stepNum++
+        trace.push({
+          step: stepNum,
+          lineNum: bodyItem.lineNum,
+          code: content,
+          variables: { ...variables },
+          output: null,
+          iteration: loopInfo?.iteration,
+          totalIterations: loopInfo?.total,
+          type: 'continue',
+          description: `⏭️ continue - 다음 반복으로 건너뛰기!`
+        })
+        shouldContinue = true
+        break
+      }
+      
+      // if문 처리
+      const ifMatch = content.match(/^if\s+(.+):$/)
+      if (ifMatch) {
+        const condition = ifMatch[1].trim()
+        const condResult = evalCondition(condition, variables)
+        
+        stepNum++
+        trace.push({
+          step: stepNum,
+          lineNum: bodyItem.lineNum,
+          code: content,
+          variables: { ...variables },
+          output: null,
+          iteration: loopInfo?.iteration,
+          totalIterations: loopInfo?.total,
+          type: 'if',
+          description: `🔀 조건 검사: ${condition} = ${condResult}`
+        })
+        
+        // if 본문 찾기
+        const ifIndent = indent
+        const ifBodyLines = []
+        let elseBodyLines = []
+        let elifBlocks = []
+        let k = i + 1
+        let foundElse = false
+        
+        while (k < bodyLines.length) {
+          const nextItem = bodyLines[k]
+          if (nextItem.indent <= ifIndent) {
+            // elif 또는 else 확인
+            if (nextItem.content.startsWith('elif ')) {
+              const elifMatch = nextItem.content.match(/^elif\s+(.+):$/)
+              if (elifMatch) {
+                elifBlocks.push({ lineNum: nextItem.lineNum, condition: elifMatch[1], body: [], indent: nextItem.indent })
+              }
+              k++
+              continue
+            } else if (nextItem.content === 'else:') {
+              foundElse = true
+              k++
+              continue
+            }
+            break
+          }
+          
+          if (foundElse) {
+            elseBodyLines.push(nextItem)
+          } else if (elifBlocks.length > 0) {
+            elifBlocks[elifBlocks.length - 1].body.push(nextItem)
+          } else {
+            ifBodyLines.push(nextItem)
+          }
+          k++
+        }
+        
+        if (condResult) {
+          const result = executeBody(ifBodyLines, loopInfo)
+          if (result.shouldBreak) { shouldBreak = true; break }
+          if (result.shouldContinue) { shouldContinue = true; break }
+        } else {
+          // elif 확인
+          let handled = false
+          for (const elif of elifBlocks) {
+            const elifResult = evalCondition(elif.condition, variables)
+            stepNum++
+            trace.push({
+              step: stepNum,
+              lineNum: elif.lineNum,
+              code: `elif ${elif.condition}:`,
+              variables: { ...variables },
+              output: null,
+              iteration: loopInfo?.iteration,
+              totalIterations: loopInfo?.total,
+              type: 'elif',
+              description: `🔀 elif 검사: ${elif.condition} = ${elifResult}`
+            })
+            
+            if (elifResult) {
+              const result = executeBody(elif.body, loopInfo)
+              if (result.shouldBreak) { shouldBreak = true }
+              if (result.shouldContinue) { shouldContinue = true }
+              handled = true
+              break
+            }
+          }
+          
+          if (!handled && elseBodyLines.length > 0) {
+            stepNum++
+            trace.push({
+              step: stepNum,
+              lineNum: elseBodyLines[0].lineNum - 1,
+              code: 'else:',
+              variables: { ...variables },
+              output: null,
+              iteration: loopInfo?.iteration,
+              totalIterations: loopInfo?.total,
+              type: 'else',
+              description: `🔀 else 블록 실행`
+            })
+            const result = executeBody(elseBodyLines, loopInfo)
+            if (result.shouldBreak) { shouldBreak = true }
+            if (result.shouldContinue) { shouldContinue = true }
+          }
+        }
+        
+        // if 블록 건너뛰기
+        i = k - 1
+        continue
+      }
+      
+      // 중첩 for문 처리
+      const nestedForMatch = content.match(/^for\s+(\w+)\s+in\s+range\((.+)\)/)
+      if (nestedForMatch) {
+        const nestedVarName = nestedForMatch[1]
+        const rangeArgs = nestedForMatch[2].split(',').map(s => evalExpr(s.trim(), variables))
+        let nestedStart = 0, nestedEnd = 0
+        if (rangeArgs.length === 1) {
+          nestedEnd = rangeArgs[0]
+        } else if (rangeArgs.length >= 2) {
+          nestedStart = rangeArgs[0]
+          nestedEnd = rangeArgs[1]
+        }
+        
+        // 중첩 for문 본문 찾기
+        const nestedBodyLines = []
+        let k = i + 1
+        while (k < bodyLines.length && bodyLines[k].indent > indent) {
+          nestedBodyLines.push(bodyLines[k])
+          k++
+        }
+        
+        for (let ni = nestedStart; ni < nestedEnd; ni++) {
+          variables[nestedVarName] = ni
+          const nestedIterNum = ni - nestedStart + 1
+          
+          stepNum++
+          trace.push({
+            step: stepNum,
+            lineNum: bodyItem.lineNum,
+            code: content,
+            variables: { ...variables },
+            output: null,
+            iteration: nestedIterNum,
+            totalIterations: nestedEnd - nestedStart,
+            type: 'for',
+            description: `🔄 ${nestedIterNum}번째 반복 (${nestedVarName} = ${ni})`
+          })
+          
+          const result = executeBody(nestedBodyLines, { iteration: nestedIterNum, total: nestedEnd - nestedStart })
+          if (result.shouldBreak) break
+          // continue는 다음 반복으로 넘어가면 되므로 별도 처리 불필요
+          if (result.shouldContinue) continue
+        }
+        
+        i = k - 1
+        continue
+      }
+      
+      // 중첩 while문 처리
+      const nestedWhileMatch = content.match(/^while\s+(.+):$/)
+      if (nestedWhileMatch) {
+        const nestedCondition = nestedWhileMatch[1].trim()
+        
+        // 중첩 while문 본문 찾기
+        const nestedBodyLines = []
+        let k = i + 1
+        while (k < bodyLines.length && bodyLines[k].indent > indent) {
+          nestedBodyLines.push(bodyLines[k])
+          k++
+        }
+        
+        let nestedIterNum = 0
+        const maxIter = 100
+        
+        while (nestedIterNum < maxIter && evalCondition(nestedCondition, variables)) {
+          nestedIterNum++
+          
+          stepNum++
+          trace.push({
+            step: stepNum,
+            lineNum: bodyItem.lineNum,
+            code: content,
+            variables: { ...variables },
+            output: null,
+            iteration: nestedIterNum,
+            totalIterations: null,
+            type: 'while',
+            description: `🔄 ${nestedIterNum}번째 반복 (조건: true)`
+          })
+          
+          const result = executeBody(nestedBodyLines, { iteration: nestedIterNum, total: null })
+          if (result.shouldBreak) break
+          // continue는 다음 반복으로 넘어가면 되므로 별도 처리 불필요
+          if (result.shouldContinue) continue
+        }
+        
+        i = k - 1
+        continue
+      }
+      
+      // print 문 처리
+      const printMatch = content.match(/^print\((.+)\)$/)
+      if (printMatch) {
+        const { text, endChar } = handlePrint(printMatch[1], variables)
+        outputs.push({ text, endChar })
+        
+        stepNum++
+        trace.push({
+          step: stepNum,
+          lineNum: bodyItem.lineNum,
+          code: content,
+          variables: { ...variables },
+          output: text,
+          endChar: endChar,
+          iteration: loopInfo?.iteration,
+          totalIterations: loopInfo?.total,
+          type: 'print',
+          description: `💬 "${text}" 출력`
+        })
+        continue
+      }
+      
+      // 변수 할당 처리
+      const compoundMatch = content.match(/^(\w+)\s*([+\-*/])=\s*(.+)$/)
+      const assignMatch = content.match(/^(\w+)\s*=\s*(.+)$/)
+      
+      if (compoundMatch) {
+        const vName = compoundMatch[1]
+        const op = compoundMatch[2]
+        const vValue = evalExpr(compoundMatch[3], variables)
+        const currentVal = variables[vName] !== undefined ? variables[vName] : 0
+        
+        if (op === '+') variables[vName] = currentVal + vValue
+        else if (op === '-') variables[vName] = currentVal - vValue
+        else if (op === '*') variables[vName] = currentVal * vValue
+        else if (op === '/') variables[vName] = currentVal / vValue
+        
+        stepNum++
+        trace.push({
+          step: stepNum,
+          lineNum: bodyItem.lineNum,
+          code: content,
+          variables: { ...variables },
+          output: null,
+          iteration: loopInfo?.iteration,
+          totalIterations: loopInfo?.total,
+          type: 'assign',
+          description: `📝 ${vName} = ${variables[vName]}`
+        })
+        continue
+      } else if (assignMatch && !content.includes('print')) {
+        const vName = assignMatch[1]
+        variables[vName] = evalExpr(assignMatch[2], variables)
+        
+        stepNum++
+        trace.push({
+          step: stepNum,
+          lineNum: bodyItem.lineNum,
+          code: content,
+          variables: { ...variables },
+          output: null,
+          iteration: loopInfo?.iteration,
+          totalIterations: loopInfo?.total,
+          type: 'assign',
+          description: `📝 ${vName} = ${variables[vName]}`
+        })
+        continue
+      }
+      
+      // 기타 문장
+      stepNum++
+      trace.push({
+        step: stepNum,
+        lineNum: bodyItem.lineNum,
+        code: content,
+        variables: { ...variables },
+        output: null,
+        iteration: loopInfo?.iteration,
+        totalIterations: loopInfo?.total,
+        type: 'statement',
+        description: `📝 코드 실행`
+      })
+    }
+    
+    return { shouldBreak, shouldContinue }
+  }
+  
   // 코드 라인 파싱
   for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
     const line = lines[lineIdx]
@@ -1760,11 +2179,17 @@ const fakeInterpreter = (code) => {
     if (!trimmed || trimmed.startsWith('#')) continue
     
     // for i in range(n) 감지
-    const forMatch = trimmed.match(/^for\s+(\w+)\s+in\s+range\((\d+)(?:,\s*(\d+))?\)/)
+    const forMatch = trimmed.match(/^for\s+(\w+)\s+in\s+range\((.+)\)/)
     if (forMatch) {
       const varName = forMatch[1]
-      const start = forMatch[3] ? parseInt(forMatch[2]) : 0
-      const end = forMatch[3] ? parseInt(forMatch[3]) : parseInt(forMatch[2])
+      const rangeArgs = forMatch[2].split(',').map(s => evalExpr(s.trim(), variables))
+      let start = 0, end = 0
+      if (rangeArgs.length === 1) {
+        end = rangeArgs[0]
+      } else if (rangeArgs.length >= 2) {
+        start = rangeArgs[0]
+        end = rangeArgs[1]
+      }
       
       // for 루프 본문 찾기
       const bodyLines = []
@@ -1779,12 +2204,13 @@ const fakeInterpreter = (code) => {
         const bodyIndent = bodyLine.length - bodyLine.trimStart().length
         if (bodyIndent <= forIndent) break
         
-        bodyLines.push({ lineNum: j + 1, content: bodyTrimmed })
+        bodyLines.push({ lineNum: j + 1, content: bodyTrimmed, indent: bodyIndent })
         j++
       }
       
-      // 각 반복 실행
-      for (let i = start; i < end; i++) {
+      // 각 반복 실행 (executeBody 사용)
+      let forBroken = false
+      for (let i = start; i < end && !forBroken; i++) {
         const iterationNum = i - start + 1
         variables[varName] = i
         
@@ -1802,260 +2228,10 @@ const fakeInterpreter = (code) => {
           description: `🔄 ${iterationNum}번째 반복 시작 (${varName} = ${i})`
         })
         
-        // 본문 실행
-        for (const bodyItem of bodyLines) {
-          // 중첩 for문 처리
-          const nestedForMatch = bodyItem.content.match(/^for\s+(\w+)\s+in\s+range\((\d+)(?:,\s*(\d+))?\)/)
-          if (nestedForMatch) {
-            const nestedVarName = nestedForMatch[1]
-            const nestedStart = nestedForMatch[3] ? parseInt(nestedForMatch[2]) : 0
-            const nestedEnd = nestedForMatch[3] ? parseInt(nestedForMatch[3]) : parseInt(nestedForMatch[2])
-            
-            // 중첩 for문의 본문 찾기
-            const nestedBodyLines = []
-            // bodyItem.lineNum은 1-based이므로 0-based 인덱스로 변환
-            const nestedForLineIdx = bodyItem.lineNum - 1
-            if (nestedForLineIdx >= lines.length) continue
-            
-            const nestedForLine = lines[nestedForLineIdx]
-            const nestedForIndent = nestedForLine.length - nestedForLine.trimStart().length
-            
-            let nestedJ = nestedForLineIdx + 1
-            while (nestedJ < lines.length) {
-              const nestedBodyLine = lines[nestedJ]
-              const nestedBodyTrimmed = nestedBodyLine.trim()
-              if (!nestedBodyTrimmed) { nestedJ++; continue }
-              
-              const nestedBodyIndent = nestedBodyLine.length - nestedBodyLine.trimStart().length
-              // 중첩 for문과 같은 들여쓰기거나 더 작으면 중첩 for문의 본문이 아님
-              if (nestedBodyIndent <= nestedForIndent) break
-              
-              nestedBodyLines.push({ lineNum: nestedJ + 1, content: nestedBodyTrimmed })
-              nestedJ++
-            }
-            
-            // 중첩 for문 실행
-            for (let nestedI = nestedStart; nestedI < nestedEnd; nestedI++) {
-              const nestedIterationNum = nestedI - nestedStart + 1
-              variables[nestedVarName] = nestedI
-              
-              // 중첩 for문 시작
-              stepNum++
-              trace.push({
-                step: stepNum,
-                lineNum: bodyItem.lineNum,
-                code: bodyItem.content,
-                variables: { ...variables },
-                output: null,
-                iteration: nestedIterationNum,
-                totalIterations: nestedEnd - nestedStart,
-                type: 'for',
-                description: `🔄 ${nestedIterationNum}번째 반복 시작 (${nestedVarName} = ${nestedI})`
-              })
-              
-              // 중첩 for문 본문 실행
-              for (const nestedBodyItem of nestedBodyLines) {
-                stepNum++
-                let output = null
-                
-                // print 문 처리
-                const nestedPrintMatch = nestedBodyItem.content.match(/^print\((.+)\)$/)
-                if (nestedPrintMatch) {
-                  let printContent = nestedPrintMatch[1]
-                  let endChar = '\n'
-                  let sepChar = ' '
-                  
-                  const endMatch = printContent.match(/,\s*end\s*=\s*["'](.*)["']/)
-                  if (endMatch) {
-                    endChar = endMatch[1]
-                    printContent = printContent.replace(/,\s*end\s*=\s*["'].*["']/, '')
-                  }
-                  
-                  const sepMatch = printContent.match(/,\s*sep\s*=\s*["'](.*)["']/)
-                  if (sepMatch) {
-                    sepChar = sepMatch[1]
-                    printContent = printContent.replace(/,\s*sep\s*=\s*["'].*["']/, '')
-                  }
-                  
-                  const args = printContent.split(/,\s*(?=(?:[^"']*["'][^"']*["'])*[^"']*$)/).filter(a => a.trim())
-                  let outputParts = []
-                  
-                  for (let arg of args) {
-                    arg = arg.trim()
-                    
-                    // 변수 치환 (i, j 모두 포함)
-                    for (const [vName, vVal] of Object.entries(variables)) {
-                      const regex = new RegExp(`\\b${vName}\\b`, 'g')
-                      arg = arg.replace(regex, vVal)
-                    }
-                    
-                    try {
-                      if ((arg.startsWith('"') && arg.endsWith('"')) || (arg.startsWith("'") && arg.endsWith("'"))) {
-                        outputParts.push(arg.slice(1, -1))
-                      } else {
-                        outputParts.push(eval(arg))
-                      }
-                    } catch {
-                      outputParts.push(arg)
-                    }
-                  }
-                  
-                  output = outputParts.join(sepChar)
-                  outputs.push({ text: String(output), endChar: endChar })
-                }
-                
-                // 변수 할당 처리
-                let currentEndChar = '\n'
-                const nestedAssignMatch = nestedBodyItem.content.match(/^(\w+)\s*=\s*(.+)$/)
-                if (nestedAssignMatch && !nestedBodyItem.content.includes('print')) {
-                  const vName = nestedAssignMatch[1]
-                  let vValue = nestedAssignMatch[2]
-                  
-                  for (const [n, v] of Object.entries(variables)) {
-                    const regex = new RegExp(`\\b${n}\\b`, 'g')
-                    vValue = vValue.replace(regex, v)
-                  }
-                  
-                  try {
-                    variables[vName] = eval(vValue)
-                  } catch {
-                    variables[vName] = vValue
-                  }
-                }
-                
-                if (nestedPrintMatch) {
-                  const endMatch = nestedBodyItem.content.match(/end\s*=\s*["'](.*)["']/)
-                  currentEndChar = endMatch ? endMatch[1] : '\n'
-                }
-                
-                trace.push({
-                  step: stepNum,
-                  lineNum: nestedBodyItem.lineNum,
-                  code: nestedBodyItem.content,
-                  variables: { ...variables },
-                  output: output,
-                  endChar: currentEndChar,
-                  iteration: nestedIterationNum,
-                  totalIterations: nestedEnd - nestedStart,
-                  type: output !== null ? 'print' : 'statement',
-                  description: output !== null ? `💬 "${output}" 출력` : `📝 코드 실행`
-                })
-              }
-              
-              // 중첩 for문 종료
-              stepNum++
-              trace.push({
-                step: stepNum,
-                lineNum: bodyItem.lineNum,
-                code: bodyItem.content,
-                variables: { ...variables },
-                output: null,
-                iteration: nestedEnd - nestedStart,
-                totalIterations: nestedEnd - nestedStart,
-                type: 'for-end',
-                description: `✅ 중첩 반복 완료! (${nestedVarName} = ${nestedI})`
-              })
-            }
-            
-            continue
-          }
-          
-          stepNum++
-          let output = null
-          
-          // print 문 처리 (end 파라미터 지원)
-          const printMatch = bodyItem.content.match(/^print\((.+)\)$/)
-          if (printMatch) {
-            let printContent = printMatch[1]
-            let endChar = '\n' // 기본값
-            let sepChar = ' '  // 기본값
-            
-            // end= 파라미터 추출
-            const endMatch = printContent.match(/,\s*end\s*=\s*["'](.*)["']/)
-            if (endMatch) {
-              endChar = endMatch[1]
-              printContent = printContent.replace(/,\s*end\s*=\s*["'].*["']/, '')
-            }
-            
-            // sep= 파라미터 추출
-            const sepMatch = printContent.match(/,\s*sep\s*=\s*["'](.*)["']/)
-            if (sepMatch) {
-              sepChar = sepMatch[1]
-              printContent = printContent.replace(/,\s*sep\s*=\s*["'].*["']/, '')
-            }
-            
-            // 여러 인자 처리 (쉼표로 분리)
-            const args = printContent.split(/,\s*(?=(?:[^"']*["'][^"']*["'])*[^"']*$)/).filter(a => a.trim())
-            let outputParts = []
-            
-            for (let arg of args) {
-              arg = arg.trim()
-              
-              // 변수 치환
-              for (const [vName, vVal] of Object.entries(variables)) {
-                const regex = new RegExp(`\\b${vName}\\b`, 'g')
-                arg = arg.replace(regex, vVal)
-              }
-              
-              // f-string 처리
-              arg = arg.replace(/f["'](.+)["']/, (match, str) => {
-                return str.replace(/\{(\w+)\}/g, (m, v) => variables[v] !== undefined ? variables[v] : m)
-              })
-              
-              // 따옴표 제거 및 평가
-              try {
-                if ((arg.startsWith('"') && arg.endsWith('"')) || (arg.startsWith("'") && arg.endsWith("'"))) {
-                  outputParts.push(arg.slice(1, -1))
-                } else {
-                  outputParts.push(eval(arg))
-                }
-              } catch {
-                outputParts.push(arg)
-              }
-            }
-            
-            output = outputParts.join(sepChar)
-            outputs.push({ text: String(output), endChar: endChar })
-          }
-          
-          // 변수 할당 처리
-          let currentEndChar = '\n'
-          const assignMatch = bodyItem.content.match(/^(\w+)\s*=\s*(.+)$/)
-          if (assignMatch && !bodyItem.content.includes('print')) {
-            const vName = assignMatch[1]
-            let vValue = assignMatch[2]
-            
-            // 변수 치환 후 평가
-            for (const [n, v] of Object.entries(variables)) {
-              const regex = new RegExp(`\\b${n}\\b`, 'g')
-              vValue = vValue.replace(regex, v)
-            }
-            
-            try {
-              variables[vName] = eval(vValue)
-            } catch {
-              variables[vName] = vValue
-            }
-          }
-          
-          // endChar 저장 (print인 경우)
-          if (printMatch) {
-            const endMatch = bodyItem.content.match(/end\s*=\s*["'](.*)["']/)
-            currentEndChar = endMatch ? endMatch[1] : '\n'
-          }
-          
-          trace.push({
-            step: stepNum,
-            lineNum: bodyItem.lineNum,
-            code: bodyItem.content,
-            variables: { ...variables },
-            output: output,
-            endChar: currentEndChar,
-            iteration: iterationNum,
-            totalIterations: end - start,
-            type: output !== null ? 'print' : 'statement',
-            description: output !== null ? `💬 "${output}" 출력` : `📝 코드 실행`
-          })
+        // 본문 실행 (executeBody 사용)
+        const result = executeBody(bodyLines, { iteration: iterationNum, total: end - start })
+        if (result.shouldBreak) {
+          forBroken = true
         }
       }
       
@@ -2070,7 +2246,7 @@ const fakeInterpreter = (code) => {
         iteration: end - start,
         totalIterations: end - start,
         type: 'for-end',
-        description: `✅ 반복 완료! (총 ${end - start}번 반복됨)`
+        description: forBroken ? `🛑 break로 반복문 종료!` : `✅ 반복 완료! (총 ${end - start}번 반복됨)`
       })
       
       lineIdx = j - 1 // 본문 건너뛰기
@@ -2095,28 +2271,18 @@ const fakeInterpreter = (code) => {
         const bodyIndent = bodyLine.length - bodyLine.trimStart().length
         if (bodyIndent <= whileIndent) break
         
-        bodyLines.push({ lineNum: j + 1, content: bodyTrimmed })
+        bodyLines.push({ lineNum: j + 1, content: bodyTrimmed, indent: bodyIndent })
         j++
       }
       
       // while 루프 실행 (조건이 참인 동안 반복)
       let iterationNum = 0
-      const maxIterations = 1000 // 무한 루프 방지
+      const maxIterations = 100 // 무한 루프 방지
+      let whileBroken = false
       
-      while (iterationNum < maxIterations) {
+      while (iterationNum < maxIterations && !whileBroken) {
         // 조건 평가
-        let conditionResult = false
-        try {
-          // 조건식에서 변수 치환
-          let evalCondition = condition
-          for (const [vName, vVal] of Object.entries(variables)) {
-            const regex = new RegExp(`\\b${vName}\\b`, 'g')
-            evalCondition = evalCondition.replace(regex, vVal)
-          }
-          conditionResult = eval(evalCondition)
-        } catch {
-          conditionResult = false
-        }
+        const conditionResult = evalCondition(condition, variables)
         
         if (!conditionResult) {
           // 조건이 거짓이면 while 루프 종료
@@ -2151,123 +2317,31 @@ const fakeInterpreter = (code) => {
           description: `🔄 ${iterationNum}번째 반복 시작 (조건: ${condition} = true)`
         })
         
-        // 본문 실행
-        for (const bodyItem of bodyLines) {
-          stepNum++
-          let output = null
-          
-          // print 문 처리
-          const printMatch = bodyItem.content.match(/^print\((.+)\)$/)
-          if (printMatch) {
-            let printContent = printMatch[1]
-            let endChar = '\n'
-            let sepChar = ' '
-            
-            const endMatch = printContent.match(/,\s*end\s*=\s*["'](.*)["']/)
-            if (endMatch) {
-              endChar = endMatch[1]
-              printContent = printContent.replace(/,\s*end\s*=\s*["'].*["']/, '')
-            }
-            
-            const sepMatch = printContent.match(/,\s*sep\s*=\s*["'](.*)["']/)
-            if (sepMatch) {
-              sepChar = sepMatch[1]
-              printContent = printContent.replace(/,\s*sep\s*=\s*["'].*["']/, '')
-            }
-            
-            const args = printContent.split(/,\s*(?=(?:[^"']*["'][^"']*["'])*[^"']*$)/).filter(a => a.trim())
-            let outputParts = []
-            
-            for (let arg of args) {
-              arg = arg.trim()
-              
-              // 변수 치환
-              for (const [vName, vVal] of Object.entries(variables)) {
-                const regex = new RegExp(`\\b${vName}\\b`, 'g')
-                arg = arg.replace(regex, vVal)
-              }
-              
-              try {
-                if ((arg.startsWith('"') && arg.endsWith('"')) || (arg.startsWith("'") && arg.endsWith("'"))) {
-                  outputParts.push(arg.slice(1, -1))
-                } else {
-                  outputParts.push(eval(arg))
-                }
-              } catch {
-                outputParts.push(arg)
-              }
-            }
-            
-            output = outputParts.join(sepChar)
-            outputs.push({ text: String(output), endChar: endChar })
-          }
-          
-          // 변수 할당 처리 (i+=1 같은 복합 할당 포함)
-          let currentEndChar = '\n'
-          const assignMatch = bodyItem.content.match(/^(\w+)\s*=\s*(.+)$/)
-          const compoundAssignMatch = bodyItem.content.match(/^(\w+)\s*([+\-*/])=(.+)$/)
-          
-          if (compoundAssignMatch) {
-            const vName = compoundAssignMatch[1]
-            const op = compoundAssignMatch[2]
-            let vValue = compoundAssignMatch[3]
-            
-            // 변수 치환
-            for (const [n, v] of Object.entries(variables)) {
-              const regex = new RegExp(`\\b${n}\\b`, 'g')
-              vValue = vValue.replace(regex, v)
-            }
-            
-            try {
-              const currentVal = variables[vName] !== undefined ? variables[vName] : 0
-              const increment = eval(vValue)
-              if (op === '+') {
-                variables[vName] = currentVal + increment
-              } else if (op === '-') {
-                variables[vName] = currentVal - increment
-              } else if (op === '*') {
-                variables[vName] = currentVal * increment
-              } else if (op === '/') {
-                variables[vName] = currentVal / increment
-              }
-            } catch {
-              // 에러 무시
-            }
-          } else if (assignMatch && !bodyItem.content.includes('print')) {
-            const vName = assignMatch[1]
-            let vValue = assignMatch[2]
-            
-            // 변수 치환
-            for (const [n, v] of Object.entries(variables)) {
-              const regex = new RegExp(`\\b${n}\\b`, 'g')
-              vValue = vValue.replace(regex, v)
-            }
-            
-            try {
-              variables[vName] = eval(vValue)
-            } catch {
-              variables[vName] = vValue
-            }
-          }
-          
-          if (printMatch) {
-            const endMatch = bodyItem.content.match(/end\s*=\s*["'](.*)["']/)
-            currentEndChar = endMatch ? endMatch[1] : '\n'
-          }
-          
-          trace.push({
-            step: stepNum,
-            lineNum: bodyItem.lineNum,
-            code: bodyItem.content,
-            variables: { ...variables },
-            output: output,
-            endChar: currentEndChar,
-            iteration: iterationNum,
-            totalIterations: null,
-            type: output !== null ? 'print' : 'statement',
-            description: output !== null ? `💬 "${output}" 출력` : `📝 코드 실행`
-          })
+        // 본문 실행 (executeBody 사용)
+        const result = executeBody(bodyLines, { iteration: iterationNum, total: null })
+        if (result.shouldBreak) {
+          whileBroken = true
         }
+        // continue는 다음 반복으로 넘어가면 되므로 별도 처리 불필요
+        if (result.shouldContinue) {
+          continue
+        }
+      }
+      
+      // while 루프 종료 (break로 종료된 경우)
+      if (whileBroken) {
+        stepNum++
+        trace.push({
+          step: stepNum,
+          lineNum: lineNum,
+          code: trimmed,
+          variables: { ...variables },
+          output: null,
+          iteration: iterationNum,
+          totalIterations: iterationNum,
+          type: 'while-end',
+          description: `🛑 break로 while 루프 종료!`
+        })
       }
       
       lineIdx = j - 1 // 본문 건너뛰기
@@ -2565,7 +2639,7 @@ const renderCurrentVars = (locals) => {
       <div class="var-row animated">
         <span class="var-name">🏷️ ${k}</span>
         <span class="var-value">${v}</span>
-      </div>
+          </div>
     `).join('')
 }
 
@@ -2591,7 +2665,7 @@ const renderCodeWithHighlight = (code, activeLine, executedLines = []) => {
       <div class="code-line ${isActive ? 'active' : ''} ${isExecuted && !isActive ? 'executed' : ''}">
         <span class="code-lno">${lineNum.toString().padStart(2, '0')}</span>
         <span class="code-text">${line || '&nbsp;'}</span>
-      </div>
+        </div>
     `
   }).join('')
 }
@@ -2779,7 +2853,7 @@ const renderImprovedFlowchart = (code, currentLine = -1) => {
   parts.push(`
     <div class="flow-node-wrapper">
       <div class="flow-node ellipse start">🚀 시작</div>
-    </div>
+          </div>
     <div class="flow-arrow-down">↓</div>
   `)
   
@@ -2795,8 +2869,8 @@ const renderImprovedFlowchart = (code, currentLine = -1) => {
         <div class="flow-node-wrapper ${isBody ? 'body-node' : ''}">
           <div class="flow-node parallelogram output ${activeClass}">
             <span>💬 ${label}</span>
-          </div>
         </div>
+          </div>
       `
     } else if (content.includes('input(')) {
       return `
@@ -3396,22 +3470,22 @@ const renderProblemSolving = () => {
                 <p>${problem.hint}</p>
               </div>
             ` : ''}
-          </div>
-        </section>
+        </div>
+      </section>
 
         <!-- 💻 코드 작성 영역 (집중 영역) -->
         <section class="code-editor-section">
           <h2>💻 코드 작성</h2>
           <div class="code-editor-container">
             <div id="practice-code-editor" style="height: 400px; width: 100%;"></div>
-          </div>
+        </div>
           <div class="code-actions">
             <button class="btn primary" id="practice-run-code">▶ 실행</button>
             <button class="btn secondary" id="practice-trace-code">👣 실행 흐름 보기</button>
             <button class="btn ghost" id="practice-reset-code">🔄 코드 초기화</button>
             <button class="btn success" id="practice-grade-code">📊 채점하기</button>
           </div>
-        </section>
+      </section>
 
         <!-- 🔍 실행 흐름 시각화 + 실행 결과 영역 -->
         <section class="trace-visualization-section">
@@ -4506,7 +4580,7 @@ const renderChatbotPage = () => {
             <button class="btn ghost" id="draw-clear">지우기</button>
           </div>
           <div class="draw-canvas-wrap">
-            <canvas id="reflection-canvas" width="800" height="400"></canvas>
+            <canvas id="reflection-canvas" width="400" height="260"></canvas>
           </div>
         </div>
       </div>
@@ -5139,11 +5213,6 @@ const attachIntroEvents = () => {
       }
 
       studentInfo = { klass, number, name }
-      try {
-        localStorage.setItem('gimal_student_info', JSON.stringify(studentInfo))
-      } catch (e) {
-        console.warn('학생 정보 저장 실패:', e)
-      }
       currentPage = 'concept'
       renderApp()
       // 상단 메뉴까지 함께 보이도록 화면을 맨 위로 스크롤
